@@ -1,0 +1,32 @@
+{
+  "name": "ai-nft-studio",
+  "version": "1.0.0",
+  "description": "AI-powered NFT Generation & Marketplace | AI驱动的NFT生成与交易平台",
+  "private": true,
+  "workspaces": [
+    "contracts",
+    "frontend"
+  ],
+  "scripts": {
+    "contracts": "npm run --workspace=contracts",
+    "frontend": "npm run --workspace=frontend",
+    "dev": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "test:contracts": "npm run test --workspace=contracts",
+    "compile": "npm run compile --workspace=contracts",
+    "deploy:local": "npm run deploy:local --workspace=contracts"
+  },
+  "keywords": [
+    "nft",
+    "ai",
+    "web3",
+    "blockchain",
+    "ethereum",
+    "nextjs"
+  ],
+  "author": "yongye9999-tech",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
