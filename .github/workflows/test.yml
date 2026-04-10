@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: [main]
 
+# Minimal permissions — read-only access to the repository contents
+permissions:
+  contents: read
+
 jobs:
   # ── Smart Contract Tests ─────────────────────────────────────
   contracts:

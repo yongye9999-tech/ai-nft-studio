@@ -36,7 +36,12 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
 
   const connect = useCallback(async () => {
     if (typeof window === "undefined" || !window.ethereum) {
-      alert("请安装 MetaMask 或其他 Web3 钱包！");
+      // Show a styled notification rather than browser alert
+      console.warn("[Web3Provider] No Web3 wallet found. Please install MetaMask.");
+      // Dispatch a custom event the app can listen to for toast notifications
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("web3:no-wallet"));
+      }
       return;
     }
 

@@ -3,7 +3,7 @@
 <!-- 项目封面与徽章 -->
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Solidity](https://img.shields.io/badge/Solidity-0.8.20-blue?logo=solidity)](https://soliditylang.org/)
+[![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue?logo=solidity)](https://soliditylang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org/)
 [![Hardhat](https://img.shields.io/badge/Hardhat-2.22-yellow)](https://hardhat.org/)
 [![OpenZeppelin](https://img.shields.io/badge/OpenZeppelin-5.0-blue)](https://openzeppelin.com/)
@@ -58,7 +58,7 @@
 
 | 层级 | 技术 | 版本 | 说明 |
 |------|------|------|------|
-| 智能合约 | Solidity | 0.8.20 | 核心合约语言 |
+| 智能合约 | Solidity | 0.8.26 | 核心合约语言 |
 | 合约框架 | Hardhat | ^2.22 | 编译、测试、部署 |
 | 合约标准 | OpenZeppelin | ^5.0 | ERC-721、ERC-2981、Ownable |
 | 前端框架 | Next.js | 14.2 | App Router + SSR |

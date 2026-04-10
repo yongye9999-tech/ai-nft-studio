@@ -90,16 +90,20 @@ const CONTRACT_ADDRESSES: Record<number, ContractAddresses> = {
 
 /**
  * Returns the contract address for the given chain and contract name.
- * Falls back to env variables for any chain not explicitly listed.
+ * Returns an empty string if the chain is not configured; callers should
+ * validate the returned address before use.
  */
 export function getContractAddress(
   chainId: number,
   contract: "ainft" | "marketplace"
 ): string {
-  const addresses =
-    CONTRACT_ADDRESSES[chainId] ||
-    (CONTRACT_ADDRESSES[Object.keys(CONTRACT_ADDRESSES)[0] as unknown as number]);
-
+  const addresses = CONTRACT_ADDRESSES[chainId];
+  if (!addresses) {
+    // Fallback to env-provided addresses for unknown chains
+    return contract === "ainft"
+      ? process.env.NEXT_PUBLIC_AINFT_CONTRACT_ADDRESS || ""
+      : process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS || "";
+  }
   return addresses[contract];
 }
 

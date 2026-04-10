@@ -51,7 +51,7 @@
 
 | 选择 | 理由 |
 |------|------|
-| Solidity 0.8.20 | 最新稳定版本，内置溢出保护，`custom error` 节省 Gas |
+| Solidity 0.8.26 | 最新稳定版本，内置溢出保护，`custom error` 节省 Gas |
 | OpenZeppelin 5.x | 行业标准安全库，经过多次审计 |
 | ERC-721 + URIStorage | 每个 Token 独立存储 IPFS URI，灵活且标准 |
 | ERC-2981 版税标准 | 二级市场自动版税分配，无需平台特殊支持 |
