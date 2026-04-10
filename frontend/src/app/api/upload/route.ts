@@ -5,6 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PINATA_API_URL = "https://api.pinata.cloud";
 
+/** Returns today's date as a YYYY-MM-DD string (UTC). */
+function getCurrentDateString(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
 export async function POST(req: NextRequest) {
   try {
     const jwt = process.env.PINATA_JWT;
@@ -44,7 +49,7 @@ export async function POST(req: NextRequest) {
       attributes: [
         ...attributes,
         { trait_type: "Platform", value: "AI+NFT Studio" },
-        { trait_type: "Created", value: new Date().toISOString().split("T")[0] },
+        { trait_type: "Created", value: getCurrentDateString() },
       ],
     };
 
