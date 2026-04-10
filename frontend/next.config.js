@@ -4,12 +4,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: [
-      "gateway.pinata.cloud",
-      "ipfs.io",
-      "via.placeholder.com",
-      "oaidalleapiprodscus.blob.core.windows.net",
-    ],
+    // images.domains is deprecated; use remotePatterns only (Next.js 15+)
     remotePatterns: [
       {
         protocol: "https",
@@ -33,14 +28,13 @@ const nextConfig = {
         protocol: "https",
         hostname: "**.huggingface.co",
       },
+      {
+        protocol: "https",
+        hostname: "via.placeholder.com",
+      },
     ],
   },
-  // Enable experimental server actions
-  experimental: {
-    serverActions: {
-      allowedOrigins: ["localhost:3000"],
-    },
-  },
+  // serverActions is stable in Next.js 15+ — no longer under experimental
 };
 
 module.exports = nextConfig;

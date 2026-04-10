@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue?logo=solidity)](https://soliditylang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![Hardhat](https://img.shields.io/badge/Hardhat-2.22-yellow)](https://hardhat.org/)
 [![OpenZeppelin](https://img.shields.io/badge/OpenZeppelin-5.0-blue)](https://openzeppelin.com/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?logo=tailwindcss)](https://tailwindcss.com/)
@@ -193,4 +193,4 @@ Users can:
 2. **Mint** their creations as ERC-721 NFTs with on-chain royalties (ERC-2981)
 3. **Trade** NFTs on the built-in marketplace with auction support
 
-Built with Next.js 14, Solidity 0.8.26, ethers.js v6, and deployed on EVM-compatible testnets.
+Built with Next.js 16, Solidity 0.8.26, ethers.js v6, and deployed on EVM-compatible testnets.

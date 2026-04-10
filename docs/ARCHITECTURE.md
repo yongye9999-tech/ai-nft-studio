@@ -8,7 +8,7 @@
 
 ```
                         ┌──────────────────────────────────────────────┐
-                        │              用户浏览器 (Next.js 14)           │
+                        │              用户浏览器 (Next.js 16)           │
                         │                                              │
                         │  /create         /marketplace    /profile    │
                         │  ┌───────────┐   ┌───────────┐  ┌────────┐  │
@@ -61,7 +61,7 @@
 
 | 选择 | 理由 |
 |------|------|
-| Next.js 14 (App Router) | 文件路由、SSR/SSG、API Routes 一体化 |
+| Next.js 16 (App Router) | 文件路由、SSR/SSG、API Routes 一体化 |
 | ethers.js v6 | 最新版 Web3 库，TypeScript 友好，Bundle 更小 |
 | Tailwind CSS | 原子化 CSS，开发效率高，定制主题方便 |
 | TypeScript | 全栈类型安全，减少 ABI 集成错误 |
