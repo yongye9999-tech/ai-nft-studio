@@ -193,4 +193,4 @@ Users can:
 2. **Mint** their creations as ERC-721 NFTs with on-chain royalties (ERC-2981)
 3. **Trade** NFTs on the built-in marketplace with auction support
 
-Built with Next.js 14, Solidity 0.8.20, ethers.js v6, and deployed on EVM-compatible testnets.
+Built with Next.js 14, Solidity 0.8.26, ethers.js v6, and deployed on EVM-compatible testnets.
