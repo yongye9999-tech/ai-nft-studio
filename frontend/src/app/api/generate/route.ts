@@ -12,7 +12,7 @@ interface GenerateRequest {
 const HF_MODEL = 'stabilityai/stable-diffusion-xl-base-1.0'
 
 async function generateWithHuggingFace(prompt: string): Promise<string> {
-  const apiKey = process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY
+  const apiKey = process.env.HUGGINGFACE_API_KEY
   if (!apiKey) throw new Error('HuggingFace API key not configured')
 
   const response = await axios.post(
