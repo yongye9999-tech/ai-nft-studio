@@ -22,7 +22,7 @@ export function useNFTContract() {
     if (!addresses?.nftCollection) return null;
     return new Contract(
       addresses.nftCollection,
-      AI_NFT_COLLECTION_ABI as string[],
+      AI_NFT_COLLECTION_ABI as unknown as string[],
       signer
     );
   }, [signer, chainId]);
@@ -42,7 +42,7 @@ export function useMarketplace() {
     if (!addresses?.marketplace) return null;
     return new Contract(
       addresses.marketplace,
-      NFT_MARKETPLACE_ABI as string[],
+      NFT_MARKETPLACE_ABI as unknown as string[],
       signer
     );
   }, [signer, chainId]);

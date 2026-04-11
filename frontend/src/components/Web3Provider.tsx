@@ -51,7 +51,9 @@ export function Web3ProviderWrapper({ children }: { children: ReactNode }) {
     }
 
     const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
-    const browserProvider = new BrowserProvider(eth as Parameters<typeof BrowserProvider>[0]);
+    // ethers v6 BrowserProvider accepts any EIP-1193 provider
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const browserProvider = new BrowserProvider(eth as any);
     const s = await browserProvider.getSigner();
     const network = await browserProvider.getNetwork();
 
