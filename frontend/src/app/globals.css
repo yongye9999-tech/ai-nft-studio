@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 15, 12, 41;
+  --background-end-rgb: 36, 36, 62;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--background-start-rgb)),
+    rgb(var(--background-end-rgb))
+  );
+  min-height: 100vh;
+  font-family: var(--font-inter, system-ui, sans-serif);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1b4b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4f46e5;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6366f1;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Neon glow effect */
+.neon-glow {
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.5), 0 0 20px rgba(99, 102, 241, 0.3);
+}
+
+.neon-glow:hover {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.7), 0 0 40px rgba(168, 85, 247, 0.4);
+}
+
+/* Button variants */
+.btn-primary {
+  @apply bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 
+         text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 
+         hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed 
+         disabled:hover:scale-100 shadow-lg hover:shadow-indigo-500/25;
+}
+
+.btn-secondary {
+  @apply glass border border-indigo-500/30 hover:border-indigo-400/60 text-white 
+         font-semibold px-6 py-3 rounded-xl transition-all duration-200 
+         hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+/* Card styles */
+.card {
+  @apply glass rounded-2xl p-6 hover:border-indigo-500/30 transition-all duration-300;
+}
+
+/* Input styles */
+.input {
+  @apply w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white 
+         placeholder-white/30 focus:outline-none focus:border-indigo-500/60 focus:bg-white/10 
+         transition-all duration-200;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply inline-block w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin;
+}
+
+/* NFT card hover effect */
+.nft-card {
+  @apply glass rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer;
+  transform: perspective(1000px) rotateX(0deg);
+}
+
+.nft-card:hover {
+  transform: perspective(1000px) rotateX(2deg) translateY(-4px);
+  @apply shadow-2xl shadow-indigo-500/20;
+}
+
+/* Gradient backgrounds */
+.bg-hero {
+  background: radial-gradient(ellipse at top, #1e1b4b 0%, #0f0c29 50%, #000000 100%);
+}
+
+.bg-section {
+  background: linear-gradient(180deg, transparent 0%, rgba(99, 102, 241, 0.05) 50%, transparent 100%);
+}
+
+/* Animated gradient border */
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(99, 102, 241, 0.3); }
+  50% { border-color: rgba(168, 85, 247, 0.6); }
+}
+
+.border-animated {
+  animation: borderGlow 3s ease-in-out infinite;
+}
+
+/* Tag/badge styles */
+.tag {
+  @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium 
+         bg-indigo-500/20 text-indigo-300 border border-indigo-500/30;
+}
+
+/* Progress bar */
+.progress-bar {
+  @apply h-2 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600;
+  transition: width 0.5s ease-in-out;
+}

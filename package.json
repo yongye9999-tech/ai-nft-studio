@@ -20,5 +20,14 @@
   },
   "keywords": ["ai", "nft", "blockchain", "stable-diffusion", "ethereum", "web3"],
   "author": "yongye9999-tech",
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "axios": "^1.15.0",
+    "@coinbase/cdp-sdk": {
+      "axios": "^1.15.0"
+    },
+    "minimatch": "^9.0.7",
+    "serialize-javascript": "7.0.5",
+    "undici": "6.24.0"
+  }
 }
