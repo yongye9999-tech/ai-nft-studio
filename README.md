@@ -206,7 +206,7 @@ npm run lint -w frontend
 - ethers.js v6
 
 **智能合约**
-- Solidity 0.8.20
+- Solidity 0.8.24
 - OpenZeppelin Contracts v5
 - Hardhat
 
