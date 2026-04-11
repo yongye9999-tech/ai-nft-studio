@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: [
-      'gateway.pinata.cloud',
-      'ipfs.io',
-      'oaidalleapiprodscus.blob.core.windows.net',
+    remotePatterns: [
+      { protocol: 'https', hostname: 'gateway.pinata.cloud' },
+      { protocol: 'https', hostname: 'ipfs.io' },
+      { protocol: 'https', hostname: 'oaidalleapiprodscus.blob.core.windows.net' },
     ],
   },
 }
