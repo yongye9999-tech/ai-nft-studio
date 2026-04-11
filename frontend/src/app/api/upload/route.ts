@@ -24,15 +24,25 @@ async function uploadImageToPinata(imageUrl: string, name: string): Promise<stri
   let imageBuffer: Buffer;
 
   if (imageUrl.startsWith("data:")) {
-    // Base64 image
+    // Base64 image from our own AI generation endpoint — safe to use directly
     const base64Data = imageUrl.split(",")[1];
     imageBuffer = Buffer.from(base64Data, "base64");
-  } else {
-    // URL image - fetch first
+  } else if (imageUrl.startsWith("https://")) {
+    // Only allow external URLs from trusted OpenAI CDN hosts
+    const allowedHosts = [
+      "oaidalleapiprodscus.blob.core.windows.net",
+      "oaidallep.blob.core.windows.net",
+    ];
+    const parsedUrl = new URL(imageUrl);
+    if (!allowedHosts.includes(parsedUrl.hostname)) {
+      throw new Error("Image URL host not allowed");
+    }
     const res = await fetch(imageUrl);
     if (!res.ok) throw new Error("Failed to fetch image");
     const arrayBuffer = await res.arrayBuffer();
     imageBuffer = Buffer.from(arrayBuffer);
+  } else {
+    throw new Error("Invalid image URL format");
   }
 
   const formData = new FormData();

@@ -3,7 +3,7 @@
 > AI驱动的NFT生成与交易平台 | AI-Powered NFT Generation & Trading Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Solidity](https://img.shields.io/badge/Solidity-0.8.24-blue)](https://soliditylang.org)
+[![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue)](https://soliditylang.org)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 [![Hardhat](https://img.shields.io/badge/Hardhat-2.22-orange)](https://hardhat.org)
 
@@ -186,7 +186,7 @@ function endAuction(uint256 auctionId) external
 
 | 层级 | 技术 | 版本 |
 |------|------|------|
-| 智能合约 | Solidity + Hardhat | 0.8.24 + 2.22 |
+| 智能合约 | Solidity + Hardhat | 0.8.26 + 2.22 |
 | 合约标准 | OpenZeppelin | 5.0 |
 | 前端框架 | Next.js (App Router) | 14 |
 | 样式 | Tailwind CSS | 3.4 |
