@@ -47,7 +47,7 @@
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| 智能合约 | Solidity 0.8.20 | ERC721 + ERC2981 + 拍卖市场 |
+| 智能合约 | Solidity 0.8.26 | ERC721 + ERC2981 + 拍卖市场 |
 | 合约框架 | Hardhat + OpenZeppelin | 编译、测试、部署 |
 | 前端框架 | Next.js 14 (App Router) | SSR + API Routes |
 | UI 样式 | Tailwind CSS | 深色主题响应式设计 |

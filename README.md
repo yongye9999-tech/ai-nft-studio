@@ -59,7 +59,7 @@ AI NFT Studio
 
 | 层级 | 技术 |
 |------|------|
-| 智能合约 | Solidity 0.8.20 + OpenZeppelin 5.x |
+| 智能合约 | Solidity 0.8.26 + OpenZeppelin 5.x |
 | 合约工具链 | Hardhat + hardhat-toolbox |
 | 前端框架 | Next.js 14 (App Router) + TypeScript |
 | UI 样式 | Tailwind CSS（深色主题） |

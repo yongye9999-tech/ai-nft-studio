@@ -3,6 +3,17 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { BrowserProvider, JsonRpcSigner } from "ethers";
 
+interface EthereumProvider {
+  request: (args: { method: string }) => Promise<string[]>;
+  on: (event: string, cb: (args: string[]) => void) => void;
+}
+
+declare global {
+  interface Window {
+    ethereum?: EthereumProvider;
+  }
+}
+
 interface Web3ContextType {
   provider: BrowserProvider | null;
   signer: JsonRpcSigner | null;
@@ -33,7 +44,7 @@ export function Web3ProviderWrapper({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async () => {
     if (typeof window === "undefined") return;
-    const eth = (window as unknown as { ethereum?: { request: (args: { method: string }) => Promise<string[]>; on: (event: string, cb: (args: string[]) => void) => void } }).ethereum;
+    const eth = window.ethereum;
     if (!eth) {
       alert("请安装 MetaMask 或其他 Web3 钱包");
       return;

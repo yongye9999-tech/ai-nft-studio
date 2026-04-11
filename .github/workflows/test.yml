@@ -12,6 +12,9 @@ on:
       - "contracts/**"
       - ".github/workflows/test.yml"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Compile & Test Smart Contracts
