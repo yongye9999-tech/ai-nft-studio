@@ -41,8 +41,8 @@ export function getIPFSFallbackUrl(ipfsUri: string): string {
 export async function uploadImage(imageData: string): Promise<string> {
   const res = await axios.post<{ imageUri: string; metadataUri: string }>('/api/upload', {
     imageData,
-    name: '',
-    description: '',
+    name: 'nft-image',
+    description: 'NFT image uploaded via AI+NFT Studio',
   })
   return res.data.imageUri
 }
@@ -54,12 +54,12 @@ export async function uploadImage(imageData: string): Promise<string> {
  */
 export async function uploadMetadata(metadata: NFTMetadata): Promise<string> {
   const res = await axios.post<{ metadataUri: string; imageUri: string }>('/api/upload', {
-    imageData: '',          // image already uploaded separately
+    imageData: '',
     name: metadata.name,
     description: metadata.description,
     attributes: metadata.attributes,
-    // Pass overridden image URI so the API route uses the already-uploaded image
-    _imageUri: metadata.image,
+    // Pass the already-uploaded image URI so the API route skips re-uploading the image
+    imageUri: metadata.image,
   })
   return res.data.metadataUri
 }

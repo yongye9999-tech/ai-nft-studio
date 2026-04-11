@@ -90,7 +90,7 @@ cp .env.example .env
 ```env
 # AI 引擎
 OPENAI_API_KEY=sk-xxxxxxxxxxxx
-NEXT_PUBLIC_HUGGINGFACE_API_KEY=hf_xxxxxxxxxxxx
+HUGGINGFACE_API_KEY=hf_xxxxxxxxxxxx
 
 # IPFS (Pinata)
 PINATA_API_KEY=xxxxxxxxxxxx

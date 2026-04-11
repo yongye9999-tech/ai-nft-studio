@@ -175,7 +175,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         address seller = listing.seller;
 
         // Distribute proceeds
-        uint256 sellerProceeds = _distributePayment(nftContract, tokenId, seller, price);
+        _distributePayment(nftContract, tokenId, seller, price);
 
         // Transfer NFT to buyer
         IERC721(nftContract).safeTransferFrom(seller, msg.sender, tokenId);
@@ -188,9 +188,6 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         }
 
         emit ItemSold(msg.sender, nftContract, tokenId, price);
-
-        // Suppress unused variable warning
-        (sellerProceeds);
     }
 
     /**
@@ -375,14 +372,13 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
      * @param tokenId     Token ID being sold.
      * @param seller      Address of the seller.
      * @param salePrice   Total sale price in wei.
-     * @return sellerProceeds Amount sent to the seller after all deductions.
      */
     function _distributePayment(
         address nftContract,
         uint256 tokenId,
         address seller,
         uint256 salePrice
-    ) internal returns (uint256 sellerProceeds) {
+    ) internal {
         uint256 royaltyAmount = 0;
         address royaltyReceiver = address(0);
 
@@ -398,7 +394,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         } catch {}
 
         uint256 fee = (salePrice * platformFee) / FEE_DENOMINATOR;
-        sellerProceeds = salePrice - fee - royaltyAmount;
+        uint256 sellerProceeds = salePrice - fee - royaltyAmount;
 
         accumulatedFees += fee;
 
