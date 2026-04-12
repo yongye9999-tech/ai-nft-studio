@@ -22,7 +22,7 @@ const STYLES: Style[] = [
 ]
 
 interface AIGeneratorProps {
-  onImageGenerated: (imageUrl: string, imageData: string) => void
+  onImageGenerated: (imageUrl: string, imageData: string, engine?: string, model?: string, prompt?: string) => void
 }
 
 export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
@@ -42,14 +42,14 @@ export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
     setError(null)
     try {
       const style = STYLES.find((s) => s.id === selectedStyle)?.prompt ?? ''
-      const res = await axios.post<{ imageUrl: string; imageData?: string }>('/api/generate', {
+      const res = await axios.post<{ imageUrl: string; imageData?: string; engine?: string; model?: string }>('/api/generate', {
         prompt: prompt.trim(),
         style,
         engine,
       })
-      const { imageUrl, imageData } = res.data
+      const { imageUrl, imageData, engine: resEngine, model: resModel } = res.data
       setPreviewUrl(imageUrl)
-      onImageGenerated(imageUrl, imageData ?? imageUrl)
+      onImageGenerated(imageUrl, imageData ?? imageUrl, resEngine, resModel, prompt.trim())
     } catch (err: unknown) {
       const msg =
         axios.isAxiosError(err)

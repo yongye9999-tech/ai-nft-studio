@@ -172,6 +172,143 @@ describe("AINFTCollection", function () {
     });
   });
 
+  // ── Free Mint List ───────────────────────────────────────────────────────
+
+  describe("FreeMintList", function () {
+    it("should allow owner to whitelist an address for free minting", async function () {
+      await nft.connect(owner).setFreeMintList([user1.address], true);
+      expect(await nft.freeMintList(user1.address)).to.be.true;
+    });
+
+    it("should emit FreeMintListUpdated when whitelist is updated", async function () {
+      await expect(nft.connect(owner).setFreeMintList([user1.address], true))
+        .to.emit(nft, "FreeMintListUpdated")
+        .withArgs(user1.address, true);
+    });
+
+    it("should allow a whitelisted address to mint for free", async function () {
+      await nft.connect(owner).setFreeMintList([user1.address], true);
+      // Minting with zero value should succeed
+      await expect(
+        nft.connect(user1).mint(user1.address, TOKEN_URI, { value: 0 })
+      ).not.to.be.reverted;
+      expect(await nft.ownerOf(1)).to.equal(user1.address);
+    });
+
+    it("should allow owner to remove an address from the whitelist", async function () {
+      await nft.connect(owner).setFreeMintList([user1.address], true);
+      await nft.connect(owner).setFreeMintList([user1.address], false);
+      expect(await nft.freeMintList(user1.address)).to.be.false;
+    });
+
+    it("should revert setFreeMintList when called by non-owner", async function () {
+      await expect(
+        nft.connect(user1).setFreeMintList([user1.address], true)
+      ).to.be.revertedWithCustomError(nft, "OwnableUnauthorizedAccount");
+    });
+
+    it("should still require the fee for a non-whitelisted address", async function () {
+      await nft.connect(owner).setFreeMintList([user1.address], true);
+      await expect(
+        nft.connect(user2).mint(user2.address, TOKEN_URI, { value: 0 })
+      ).to.be.revertedWith("AINFTCollection: insufficient mint fee");
+    });
+  });
+
+  // ── Mint Fee Discount ────────────────────────────────────────────────────
+
+  describe("MintFeeDiscount", function () {
+    it("should allow owner to set a discount for an address", async function () {
+      await nft.connect(owner).setMintFeeDiscount(user1.address, 5000); // 50% off
+      expect(await nft.mintFeeDiscount(user1.address)).to.equal(5000);
+    });
+
+    it("should emit MintFeeDiscountUpdated when discount is set", async function () {
+      await expect(nft.connect(owner).setMintFeeDiscount(user1.address, 5000))
+        .to.emit(nft, "MintFeeDiscountUpdated")
+        .withArgs(user1.address, 5000);
+    });
+
+    it("should apply discount when minting", async function () {
+      // 50% discount: effective fee = 0.005 ETH
+      await nft.connect(owner).setMintFeeDiscount(user1.address, 5000);
+      const discountedFee = MINT_FEE / 2n;
+
+      const balanceBefore = await ethers.provider.getBalance(user1.address);
+      const tx = await nft
+        .connect(user1)
+        .mint(user1.address, TOKEN_URI, { value: discountedFee });
+      const receipt = await tx.wait();
+      const gasUsed = receipt.gasUsed * (receipt.gasPrice || receipt.effectiveGasPrice);
+      const balanceAfter = await ethers.provider.getBalance(user1.address);
+
+      expect(balanceBefore - balanceAfter).to.equal(discountedFee + gasUsed);
+    });
+
+    it("should revert if discounted fee is not met", async function () {
+      await nft.connect(owner).setMintFeeDiscount(user1.address, 5000); // 50% off
+      const tooLow = ethers.parseEther("0.004"); // below the 0.005 effective fee
+      await expect(
+        nft.connect(user1).mint(user1.address, TOKEN_URI, { value: tooLow })
+      ).to.be.revertedWith("AINFTCollection: insufficient mint fee");
+    });
+
+    it("should revert if discount exceeds 100%", async function () {
+      await expect(
+        nft.connect(owner).setMintFeeDiscount(user1.address, 10_001)
+      ).to.be.revertedWith("AINFTCollection: discount cannot exceed 100%");
+    });
+
+    it("should revert setMintFeeDiscount when called by non-owner", async function () {
+      await expect(
+        nft.connect(user1).setMintFeeDiscount(user1.address, 5000)
+      ).to.be.revertedWithCustomError(nft, "OwnableUnauthorizedAccount");
+    });
+  });
+
+  // ── Pausable ─────────────────────────────────────────────────────────────
+
+  describe("Pausable", function () {
+    it("should allow owner to pause the contract", async function () {
+      await nft.connect(owner).pause();
+      expect(await nft.paused()).to.be.true;
+    });
+
+    it("should allow owner to unpause the contract", async function () {
+      await nft.connect(owner).pause();
+      await nft.connect(owner).unpause();
+      expect(await nft.paused()).to.be.false;
+    });
+
+    it("should revert mint when paused", async function () {
+      await nft.connect(owner).pause();
+      await expect(
+        nft.connect(user1).mint(user1.address, TOKEN_URI, { value: MINT_FEE })
+      ).to.be.revertedWithCustomError(nft, "EnforcedPause");
+    });
+
+    it("should allow minting again after unpausing", async function () {
+      await nft.connect(owner).pause();
+      await nft.connect(owner).unpause();
+      await expect(
+        nft.connect(user1).mint(user1.address, TOKEN_URI, { value: MINT_FEE })
+      ).not.to.be.reverted;
+    });
+
+    it("should revert pause when called by non-owner", async function () {
+      await expect(
+        nft.connect(user1).pause()
+      ).to.be.revertedWithCustomError(nft, "OwnableUnauthorizedAccount");
+    });
+
+    it("should revert unpause when called by non-owner", async function () {
+      await nft.connect(owner).pause();
+      await expect(
+        nft.connect(user1).unpause()
+      ).to.be.revertedWithCustomError(nft, "OwnableUnauthorizedAccount");
+    });
+  });
+
   // ── Withdraw ─────────────────────────────────────────────────────────────
 
   describe("Withdraw", function () {

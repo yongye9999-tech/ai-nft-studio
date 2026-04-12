@@ -15,7 +15,7 @@ const BSCSCAN_API_KEY = process.env.BSCSCAN_API_KEY || "";
 /** @type {import('hardhat/config').HardhatUserConfig} */
 module.exports = {
   solidity: {
-    version: "0.8.24",
+    version: "0.8.26",
     settings: {
       optimizer: {
         enabled: true,
