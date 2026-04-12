@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -11,8 +12,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @notice A decentralized marketplace for buying, selling, and auctioning ERC721 NFTs.
  * @dev Supports fixed-price listings and timed auctions. Royalties are paid out via ERC2981
  *      on every completed sale. The platform retains a 2.5% fee on each transaction.
+ *      A Pausable mechanism allows the owner to halt all market operations in an emergency.
+ *      Auctions are capped at MAX_AUCTION_DURATION to prevent indefinitely locked NFTs.
+ *      The owner may force-delist any listing or cancel any auction (e.g. for DMCA compliance).
  */
-contract NFTMarketplace is Ownable, ReentrancyGuard {
+contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     // ─── Constants ────────────────────────────────────────────────────────────
 
     /// @notice Platform fee in basis points (250 = 2.5%).
@@ -20,6 +24,9 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
 
     /// @dev Denominator for basis-point calculations.
     uint256 private constant FEE_DENOMINATOR = 10_000;
+
+    /// @notice Maximum allowed auction duration to prevent indefinitely locked NFTs.
+    uint256 public constant MAX_AUCTION_DURATION = 30 days;
 
     // ─── Data Structures ──────────────────────────────────────────────────────
 
@@ -90,7 +97,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         uint256 price
     );
 
-    /// @notice Emitted when a listing is cancelled by the seller.
+    /// @notice Emitted when a listing is cancelled by the seller or force-delisted by the owner.
     event ListingCancelled(address indexed nftContract, uint256 indexed tokenId);
 
     /// @notice Emitted when a new auction is created.
@@ -118,6 +125,9 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         uint256 finalPrice
     );
 
+    /// @notice Emitted when an active auction is force-cancelled by the owner.
+    event AuctionCancelled(address indexed nftContract, uint256 indexed tokenId);
+
     // ─── Constructor ──────────────────────────────────────────────────────────
 
     constructor() Ownable(msg.sender) {}
@@ -127,6 +137,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
     /**
      * @notice Lists an NFT for fixed-price sale on the marketplace.
      * @dev The marketplace must be approved to transfer the token before calling this function.
+     *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the token to list.
      * @param price       Sale price in wei (must be > 0).
@@ -135,7 +146,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         address nftContract,
         uint256 tokenId,
         uint256 price
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         require(price > 0, "Marketplace: price must be > 0");
         IERC721 nft = IERC721(nftContract);
         require(nft.ownerOf(tokenId) == msg.sender, "Marketplace: not token owner");
@@ -161,10 +172,11 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
      * @notice Purchases a listed NFT at its fixed price.
      * @dev Distributes royalties (ERC2981), platform fee, and seller proceeds.
      *      Excess ETH is refunded to the buyer.
+     *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the token to purchase.
      */
-    function buyItem(address nftContract, uint256 tokenId) external payable nonReentrant {
+    function buyItem(address nftContract, uint256 tokenId) external payable nonReentrant whenNotPaused {
         Listing storage listing = _listings[nftContract][tokenId];
         require(listing.active, "Marketplace: not listed");
         require(msg.value >= listing.price, "Marketplace: insufficient payment");
@@ -206,23 +218,41 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         emit ListingCancelled(nftContract, tokenId);
     }
 
+    /**
+     * @notice Force-removes an active listing regardless of who created it.
+     * @dev Owner-only emergency function for DMCA compliance or abuse prevention.
+     * @param nftContract Address of the ERC721 token contract.
+     * @param tokenId     ID of the listed token.
+     */
+    function delistItem(address nftContract, uint256 tokenId) external onlyOwner {
+        Listing storage listing = _listings[nftContract][tokenId];
+        require(listing.active, "Marketplace: not listed");
+
+        listing.active = false;
+
+        emit ListingCancelled(nftContract, tokenId);
+    }
+
     // ─── Auction ──────────────────────────────────────────────────────────────
 
     /**
      * @notice Creates a timed auction for an NFT.
      * @dev The marketplace must be approved before calling. Duration is in seconds.
+     *      Duration must not exceed MAX_AUCTION_DURATION (30 days).
+     *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the token to auction.
      * @param startPrice  Minimum first-bid amount in wei.
-     * @param duration    Auction duration in seconds (must be > 0).
+     * @param duration    Auction duration in seconds (must be > 0 and <= MAX_AUCTION_DURATION).
      */
     function createAuction(
         address nftContract,
         uint256 tokenId,
         uint256 startPrice,
         uint256 duration
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         require(duration > 0, "Marketplace: duration must be > 0");
+        require(duration <= MAX_AUCTION_DURATION, "Marketplace: duration exceeds maximum");
         require(startPrice > 0, "Marketplace: startPrice must be > 0");
         IERC721 nft = IERC721(nftContract);
         require(nft.ownerOf(tokenId) == msg.sender, "Marketplace: not token owner");
@@ -253,10 +283,11 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
      * @notice Places a bid on an active auction.
      * @dev Bid must exceed both the start price and the current highest bid.
      *      The previous highest bidder is immediately refunded.
+     *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the auctioned token.
      */
-    function placeBid(address nftContract, uint256 tokenId) external payable nonReentrant {
+    function placeBid(address nftContract, uint256 tokenId) external payable nonReentrant whenNotPaused {
         Auction storage auction = _auctions[nftContract][tokenId];
         require(auction.active, "Marketplace: no active auction");
         require(block.timestamp < auction.endTime, "Marketplace: auction ended");
@@ -313,6 +344,32 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         emit AuctionEnded(winner, nftContract, tokenId, finalPrice);
     }
 
+    /**
+     * @notice Force-cancels an active auction and refunds the highest bidder.
+     * @dev Owner-only emergency function for DMCA compliance or abuse prevention.
+     *      If there is a current highest bid, the bidder is refunded before cancellation.
+     * @param nftContract Address of the ERC721 token contract.
+     * @param tokenId     ID of the auctioned token.
+     */
+    function cancelAuction(address nftContract, uint256 tokenId) external onlyOwner nonReentrant {
+        Auction storage auction = _auctions[nftContract][tokenId];
+        require(auction.active, "Marketplace: no active auction");
+
+        auction.active = false;
+
+        // Refund current highest bidder if any
+        if (auction.highestBidder != address(0)) {
+            uint256 bidToRefund = auction.highestBid;
+            address bidderToRefund = auction.highestBidder;
+            auction.highestBid = 0;
+            auction.highestBidder = address(0);
+            (bool refundSuccess, ) = payable(bidderToRefund).call{value: bidToRefund}("");
+            require(refundSuccess, "Marketplace: bidder refund failed");
+        }
+
+        emit AuctionCancelled(nftContract, tokenId);
+    }
+
     // ─── Owner Functions ──────────────────────────────────────────────────────
 
     /**
@@ -322,6 +379,22 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
     function setPlatformFee(uint256 newFee) external onlyOwner {
         require(newFee <= 1000, "Marketplace: fee cannot exceed 10%");
         platformFee = newFee;
+    }
+
+    /**
+     * @notice Pauses all listing, buying, and bidding operations.
+     * @dev Callable only by the owner. Use in emergency situations.
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice Unpauses marketplace operations.
+     * @dev Callable only by the owner.
+     */
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     /**
@@ -407,3 +480,4 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         require(sellerSuccess, "Marketplace: seller transfer failed");
     }
 }
+

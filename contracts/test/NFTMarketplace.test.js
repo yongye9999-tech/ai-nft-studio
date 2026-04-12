@@ -361,4 +361,190 @@ describe("NFTMarketplace", function () {
       );
     });
   });
+
+  // ── Auction duration limit ────────────────────────────────────────────────
+
+  describe("Auction duration limit", function () {
+    let tokenId;
+    let nftAddr;
+    const START_PRICE = ethers.parseEther("0.5");
+
+    beforeEach(async function () {
+      tokenId = await mintNFT(seller);
+      await approveMarketplace(seller, tokenId);
+      nftAddr = await nft.getAddress();
+    });
+
+    it("should expose MAX_AUCTION_DURATION constant", async function () {
+      const max = await marketplace.MAX_AUCTION_DURATION();
+      expect(max).to.equal(30 * 24 * 3600); // 30 days in seconds
+    });
+
+    it("should revert createAuction if duration exceeds 30 days", async function () {
+      const tooLong = 30 * 24 * 3600 + 1;
+      await expect(
+        marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, tooLong)
+      ).to.be.revertedWith("Marketplace: duration exceeds maximum");
+    });
+
+    it("should accept createAuction at exactly 30 days", async function () {
+      const exactMax = 30 * 24 * 3600;
+      await expect(
+        marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, exactMax)
+      ).not.to.be.reverted;
+    });
+  });
+
+  // ── delistItem (emergency delist) ─────────────────────────────────────────
+
+  describe("delistItem", function () {
+    let tokenId;
+    let nftAddr;
+
+    beforeEach(async function () {
+      tokenId = await mintNFT(seller);
+      await approveMarketplace(seller, tokenId);
+      nftAddr = await nft.getAddress();
+      await marketplace.connect(seller).listItem(nftAddr, tokenId, LIST_PRICE);
+    });
+
+    it("should allow owner to force-delist an active listing", async function () {
+      await expect(marketplace.connect(owner).delistItem(nftAddr, tokenId))
+        .to.emit(marketplace, "ListingCancelled")
+        .withArgs(nftAddr, tokenId);
+
+      const listing = await marketplace.getListing(nftAddr, tokenId);
+      expect(listing.active).to.be.false;
+    });
+
+    it("should revert delistItem if listing is not active", async function () {
+      await marketplace.connect(owner).delistItem(nftAddr, tokenId);
+      await expect(
+        marketplace.connect(owner).delistItem(nftAddr, tokenId)
+      ).to.be.revertedWith("Marketplace: not listed");
+    });
+
+    it("should revert delistItem when called by non-owner", async function () {
+      await expect(
+        marketplace.connect(buyer).delistItem(nftAddr, tokenId)
+      ).to.be.revertedWithCustomError(marketplace, "OwnableUnauthorizedAccount");
+    });
+  });
+
+  // ── cancelAuction (emergency cancel) ─────────────────────────────────────
+
+  describe("cancelAuction", function () {
+    let tokenId;
+    let nftAddr;
+    const START_PRICE = ethers.parseEther("0.5");
+
+    beforeEach(async function () {
+      tokenId = await mintNFT(seller);
+      await approveMarketplace(seller, tokenId);
+      nftAddr = await nft.getAddress();
+      await marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, ONE_DAY);
+    });
+
+    it("should allow owner to cancel an active auction with no bids", async function () {
+      await expect(marketplace.connect(owner).cancelAuction(nftAddr, tokenId))
+        .to.emit(marketplace, "AuctionCancelled")
+        .withArgs(nftAddr, tokenId);
+
+      const auction = await marketplace.getAuction(nftAddr, tokenId);
+      expect(auction.active).to.be.false;
+    });
+
+    it("should refund the highest bidder when auction is cancelled", async function () {
+      const bidAmount = ethers.parseEther("0.7");
+      await marketplace.connect(bidder1).placeBid(nftAddr, tokenId, { value: bidAmount });
+
+      const bidder1Before = await ethers.provider.getBalance(bidder1.address);
+      await marketplace.connect(owner).cancelAuction(nftAddr, tokenId);
+      const bidder1After = await ethers.provider.getBalance(bidder1.address);
+
+      expect(bidder1After - bidder1Before).to.equal(bidAmount);
+    });
+
+    it("should revert cancelAuction if no active auction", async function () {
+      await marketplace.connect(owner).cancelAuction(nftAddr, tokenId);
+      await expect(
+        marketplace.connect(owner).cancelAuction(nftAddr, tokenId)
+      ).to.be.revertedWith("Marketplace: no active auction");
+    });
+
+    it("should revert cancelAuction when called by non-owner", async function () {
+      await expect(
+        marketplace.connect(buyer).cancelAuction(nftAddr, tokenId)
+      ).to.be.revertedWithCustomError(marketplace, "OwnableUnauthorizedAccount");
+    });
+  });
+
+  // ── Marketplace Pausable ──────────────────────────────────────────────────
+
+  describe("Pausable", function () {
+    let tokenId;
+    let nftAddr;
+    const START_PRICE = ethers.parseEther("0.5");
+
+    beforeEach(async function () {
+      tokenId = await mintNFT(seller);
+      await approveMarketplace(seller, tokenId);
+      nftAddr = await nft.getAddress();
+    });
+
+    it("should allow owner to pause the marketplace", async function () {
+      await marketplace.connect(owner).pause();
+      expect(await marketplace.paused()).to.be.true;
+    });
+
+    it("should allow owner to unpause the marketplace", async function () {
+      await marketplace.connect(owner).pause();
+      await marketplace.connect(owner).unpause();
+      expect(await marketplace.paused()).to.be.false;
+    });
+
+    it("should revert listItem when paused", async function () {
+      await marketplace.connect(owner).pause();
+      await expect(
+        marketplace.connect(seller).listItem(nftAddr, tokenId, LIST_PRICE)
+      ).to.be.revertedWithCustomError(marketplace, "EnforcedPause");
+    });
+
+    it("should revert buyItem when paused", async function () {
+      await marketplace.connect(seller).listItem(nftAddr, tokenId, LIST_PRICE);
+      await marketplace.connect(owner).pause();
+      await expect(
+        marketplace.connect(buyer).buyItem(nftAddr, tokenId, { value: LIST_PRICE })
+      ).to.be.revertedWithCustomError(marketplace, "EnforcedPause");
+    });
+
+    it("should revert createAuction when paused", async function () {
+      await marketplace.connect(owner).pause();
+      await expect(
+        marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, ONE_DAY)
+      ).to.be.revertedWithCustomError(marketplace, "EnforcedPause");
+    });
+
+    it("should revert placeBid when paused", async function () {
+      await marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, ONE_DAY);
+      await marketplace.connect(owner).pause();
+      await expect(
+        marketplace.connect(bidder1).placeBid(nftAddr, tokenId, { value: ethers.parseEther("0.6") })
+      ).to.be.revertedWithCustomError(marketplace, "EnforcedPause");
+    });
+
+    it("should allow operations again after unpause", async function () {
+      await marketplace.connect(owner).pause();
+      await marketplace.connect(owner).unpause();
+      await expect(
+        marketplace.connect(seller).listItem(nftAddr, tokenId, LIST_PRICE)
+      ).not.to.be.reverted;
+    });
+
+    it("should revert pause when called by non-owner", async function () {
+      await expect(
+        marketplace.connect(buyer).pause()
+      ).to.be.revertedWithCustomError(marketplace, "OwnableUnauthorizedAccount");
+    });
+  });
 });
