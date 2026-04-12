@@ -53,6 +53,16 @@ export const CONTRACT_ADDRESSES: Record<number, ChainAddresses> = {
     AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_LOCAL ?? '',
     NFTMarketplace: process.env.NEXT_PUBLIC_NFT_MARKETPLACE_LOCAL ?? '',
   },
+  1: {
+    // Ethereum Mainnet
+    AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_MAINNET ?? '',
+    NFTMarketplace: process.env.NEXT_PUBLIC_NFT_MARKETPLACE_MAINNET ?? '',
+  },
+  137: {
+    // Polygon Mainnet
+    AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_POLYGON ?? '',
+    NFTMarketplace: process.env.NEXT_PUBLIC_NFT_MARKETPLACE_POLYGON ?? '',
+  },
   11155111: {
     // Sepolia
     AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_SEPOLIA ?? '',
