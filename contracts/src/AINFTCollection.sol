@@ -116,12 +116,13 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, Pausable
         tokenId = tokenCounter;
         _setTokenURI(tokenId, uri);
 
+        // Emit event before external calls (strict CEI — events are Effects)
+        emit NFTMinted(to, tokenId, uri);
+
         // Interaction 1: transfer token (may call onERC721Received on recipient)
         _safeMint(to, tokenId);
 
-        emit NFTMinted(to, tokenId, uri);
-
-        // Interaction 2: refund excess payment last (strict CEI — all state already settled)
+        // Interaction 2: refund excess payment last
         uint256 excess = msg.value - effectiveFee;
         if (excess > 0) {
             (bool refundSuccess, ) = payable(msg.sender).call{value: excess}("");

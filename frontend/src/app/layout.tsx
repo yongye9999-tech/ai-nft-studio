@@ -7,7 +7,7 @@ import Navbar from '@/components/Navbar'
 export const metadata: Metadata = {
   title: 'AI+NFT Studio',
   description: 'AI驱动的NFT创作与交易平台 — 生成、铸造、交易一站式体验',
-  keywords: ['NFT', 'AI', 'blockchain', '区块链', '数字艺术', 'DALL-E', 'Stable Diffusion'],
+  keywords: 'NFT, AI, blockchain, 区块链, 数字艺术, DALL-E, Stable Diffusion',
 }
 
 export default function RootLayout({

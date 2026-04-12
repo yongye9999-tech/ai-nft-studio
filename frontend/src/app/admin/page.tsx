@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useWeb3Context } from '@/components/Web3Provider'
+import { useWeb3Context, CHAIN_CONFIGS } from '@/components/Web3Provider'
 import { getContractAddresses, AINFT_COLLECTION_ABI, NFT_MARKETPLACE_ABI } from '@/lib/contracts'
 import { ethers } from 'ethers'
 
@@ -297,24 +297,34 @@ export default function AdminPage() {
 
           {/* ── Links ──────────────────────────────────────────────────────── */}
           <div className="glass-card p-5">
-            <h2 className="font-semibold text-violet-300 mb-3">🔗 快速链接</h2>
+            <h2 className="font-semibold text-violet-300 mb-3">🔗 合约浏览器链接</h2>
             <div className="flex flex-wrap gap-3">
-              <a
-                href={`https://etherscan.io/address/${addresses.AINFTCollection}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:underline"
-              >
-                Collection on Etherscan ↗
-              </a>
-              <a
-                href={`https://etherscan.io/address/${addresses.NFTMarketplace}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:underline"
-              >
-                Marketplace on Etherscan ↗
-              </a>
+              {(() => {
+                const explorerBase =
+                  chainId && CHAIN_CONFIGS[chainId]?.blockExplorerUrls?.[0]
+                    ? CHAIN_CONFIGS[chainId].blockExplorerUrls[0]
+                    : 'https://etherscan.io'
+                return (
+                  <>
+                    <a
+                      href={`${explorerBase}/address/${addresses.AINFTCollection}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:underline"
+                    >
+                      Collection on Explorer ↗
+                    </a>
+                    <a
+                      href={`${explorerBase}/address/${addresses.NFTMarketplace}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:underline"
+                    >
+                      Marketplace on Explorer ↗
+                    </a>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>
