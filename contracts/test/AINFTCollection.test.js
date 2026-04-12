@@ -95,10 +95,21 @@ describe("AINFTCollection", function () {
       ).to.be.revertedWith("AINFTCollection: insufficient mint fee");
     });
 
-    it("should allow overpayment (excess not refunded by contract)", async function () {
+    it("should refund excess payment to the caller", async function () {
       const overpayment = ethers.parseEther("0.1");
-      await expect(nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment })).to
-        .not.be.reverted;
+      const excess = overpayment - MINT_FEE;
+
+      const balanceBefore = await ethers.provider.getBalance(user1.address);
+      const tx = await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
+      const receipt = await tx.wait();
+      const gasUsed = receipt.gasUsed * (receipt.gasPrice || receipt.effectiveGasPrice);
+      const balanceAfter = await ethers.provider.getBalance(user1.address);
+
+      // User paid MINT_FEE + gas, excess was refunded
+      expect(balanceBefore - balanceAfter).to.equal(MINT_FEE + gasUsed);
+      // Contract only holds the mint fee, not the overpayment
+      const contractBalance = await ethers.provider.getBalance(await nft.getAddress());
+      expect(contractBalance).to.equal(MINT_FEE);
     });
 
     it("should revert when max supply is reached", async function () {
@@ -170,7 +181,7 @@ describe("AINFTCollection", function () {
       const ownerBalanceBefore = await ethers.provider.getBalance(owner.address);
       const tx = await nft.connect(owner).withdraw();
       const receipt = await tx.wait();
-      const gasUsed = receipt.gasUsed * receipt.gasPrice;
+      const gasUsed = receipt.gasUsed * (receipt.gasPrice || receipt.effectiveGasPrice);
 
       const ownerBalanceAfter = await ethers.provider.getBalance(owner.address);
       expect(ownerBalanceAfter).to.equal(ownerBalanceBefore + MINT_FEE - gasUsed);

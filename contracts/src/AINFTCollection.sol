@@ -5,14 +5,16 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title AINFTCollection
  * @notice ERC721 NFT collection contract with royalty support (ERC2981) for AI-generated artwork.
- * @dev Combines ERC721URIStorage for per-token metadata, ERC2981 for royalties, and Ownable for admin control.
+ * @dev Combines ERC721URIStorage for per-token metadata, ERC2981 for royalties, Ownable for admin
+ *      control, and ReentrancyGuard to protect mint() against reentrancy attacks.
  *      Users pay a mintFee to mint; proceeds and royalties can be withdrawn by the owner.
  */
-contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable {
+contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, ReentrancyGuard {
     /// @notice Counter tracking the total number of minted tokens (also serves as next token ID).
     uint256 public tokenCounter;
 
@@ -65,21 +67,29 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable {
 
     /**
      * @notice Mints a new NFT to the specified address.
-     * @dev Caller must send at least `mintFee` wei. Excess is not refunded.
+     * @dev Caller must send at least `mintFee` wei. Any excess ETH is refunded to the caller.
      *      Token ID is auto-incremented starting from 1.
      * @param to       Address that will own the minted token.
      * @param uri      Metadata URI (typically an IPFS link to a JSON file).
      * @return tokenId The ID of the newly minted token.
      */
-    function mint(address to, string memory uri) external payable returns (uint256 tokenId) {
+    function mint(address to, string memory uri) external payable nonReentrant returns (uint256 tokenId) {
         require(msg.value >= mintFee, "AINFTCollection: insufficient mint fee");
         require(tokenCounter < maxSupply, "AINFTCollection: max supply reached");
 
+        // Effects: update state before any external calls
         tokenCounter++;
         tokenId = tokenCounter;
+        _setTokenURI(tokenId, uri);
+
+        // Refund any excess payment before calling external contracts (CEI pattern)
+        uint256 excess = msg.value - mintFee;
+        if (excess > 0) {
+            (bool refundSuccess, ) = payable(msg.sender).call{value: excess}("");
+            require(refundSuccess, "AINFTCollection: refund failed");
+        }
 
         _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
 
         emit NFTMinted(to, tokenId, uri);
     }
