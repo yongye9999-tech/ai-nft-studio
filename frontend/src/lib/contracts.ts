@@ -10,34 +10,53 @@ export const AINFT_COLLECTION_ABI = [
   'function ownerOf(uint256 tokenId) external view returns (address)',
   'function tokenURI(uint256 tokenId) external view returns (string)',
   'function royaltyInfo(uint256 tokenId, uint256 salePrice) external view returns (address, uint256)',
+  'function owner() external view returns (address)',
+  'function paused() external view returns (bool)',
+  'function pause() external',
+  'function unpause() external',
   'function setMintFee(uint256 fee) external',
   'function setDefaultRoyalty(address receiver, uint96 feeNumerator) external',
+  'function setFreeMintList(address[] calldata creators, bool status) external',
+  'function setMintFeeDiscount(address creator, uint256 discountBps) external',
+  'function freeMintList(address) external view returns (bool)',
+  'function mintFeeDiscount(address) external view returns (uint256)',
   'function withdraw() external',
   'function approve(address to, uint256 tokenId) external',
   'function setApprovalForAll(address operator, bool approved) external',
   'function isApprovedForAll(address owner, address operator) external view returns (bool)',
   'event NFTMinted(address indexed to, uint256 indexed tokenId, string tokenURI)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+  'event FreeMintListUpdated(address indexed creator, bool status)',
+  'event MintFeeDiscountUpdated(address indexed creator, uint256 discountBps)',
 ] as const
 
 export const NFT_MARKETPLACE_ABI = [
   'function listItem(address nftContract, uint256 tokenId, uint256 price) external',
   'function buyItem(address nftContract, uint256 tokenId) external payable',
   'function cancelListing(address nftContract, uint256 tokenId) external',
+  'function delistItem(address nftContract, uint256 tokenId) external',
   'function createAuction(address nftContract, uint256 tokenId, uint256 startPrice, uint256 duration) external',
   'function placeBid(address nftContract, uint256 tokenId) external payable',
   'function endAuction(address nftContract, uint256 tokenId) external',
+  'function cancelAuction(address nftContract, uint256 tokenId) external',
   'function getListing(address nftContract, uint256 tokenId) external view returns (tuple(address seller, address nftContract, uint256 tokenId, uint256 price, bool active))',
   'function getAuction(address nftContract, uint256 tokenId) external view returns (tuple(address seller, address nftContract, uint256 tokenId, uint256 startPrice, uint256 highestBid, address highestBidder, uint256 endTime, bool active))',
   'function platformFee() external view returns (uint256)',
   'function accumulatedFees() external view returns (uint256)',
+  'function owner() external view returns (address)',
+  'function paused() external view returns (bool)',
+  'function pause() external',
+  'function unpause() external',
+  'function setPlatformFee(uint256 newFee) external',
   'function withdrawFees() external',
+  'function MAX_AUCTION_DURATION() external view returns (uint256)',
   'event ItemListed(address indexed seller, address indexed nftContract, uint256 indexed tokenId, uint256 price)',
   'event ItemSold(address indexed buyer, address indexed nftContract, uint256 indexed tokenId, uint256 price)',
   'event ListingCancelled(address indexed nftContract, uint256 indexed tokenId)',
   'event AuctionCreated(address indexed seller, address indexed nftContract, uint256 indexed tokenId, uint256 startPrice, uint256 endTime)',
   'event BidPlaced(address indexed bidder, address indexed nftContract, uint256 indexed tokenId, uint256 bidAmount)',
   'event AuctionEnded(address indexed winner, address indexed nftContract, uint256 indexed tokenId, uint256 finalPrice)',
+  'event AuctionCancelled(address indexed nftContract, uint256 indexed tokenId)',
 ] as const
 
 // ── Contract Addresses by chainId ─────────────────────────────────────────────
@@ -62,6 +81,16 @@ export const CONTRACT_ADDRESSES: Record<number, ChainAddresses> = {
     // Polygon Mainnet
     AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_POLYGON ?? '',
     NFTMarketplace: process.env.NEXT_PUBLIC_NFT_MARKETPLACE_POLYGON ?? '',
+  },
+  42161: {
+    // Arbitrum One
+    AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_ARBITRUM ?? '',
+    NFTMarketplace: process.env.NEXT_PUBLIC_NFT_MARKETPLACE_ARBITRUM ?? '',
+  },
+  8453: {
+    // Base Mainnet
+    AINFTCollection: process.env.NEXT_PUBLIC_AINFT_COLLECTION_BASE ?? '',
+    NFTMarketplace: process.env.NEXT_PUBLIC_NFT_MARKETPLACE_BASE ?? '',
   },
   11155111: {
     // Sepolia

@@ -10,6 +10,82 @@ import {
 } from 'react'
 import { ethers, type BrowserProvider, type JsonRpcSigner } from 'ethers'
 
+// ── Chain metadata for wallet_addEthereumChain ────────────────────────────────
+
+export interface ChainConfig {
+  chainId: number
+  chainName: string
+  nativeCurrency: { name: string; symbol: string; decimals: number }
+  rpcUrls: string[]
+  blockExplorerUrls: string[]
+  isTestnet?: boolean
+}
+
+export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
+  1: {
+    chainId: 1,
+    chainName: 'Ethereum Mainnet',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://eth.llamarpc.com'],
+    blockExplorerUrls: ['https://etherscan.io'],
+  },
+  137: {
+    chainId: 137,
+    chainName: 'Polygon',
+    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    rpcUrls: ['https://polygon-rpc.com'],
+    blockExplorerUrls: ['https://polygonscan.com'],
+  },
+  42161: {
+    chainId: 42161,
+    chainName: 'Arbitrum One',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+    blockExplorerUrls: ['https://arbiscan.io'],
+  },
+  8453: {
+    chainId: 8453,
+    chainName: 'Base',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://mainnet.base.org'],
+    blockExplorerUrls: ['https://basescan.org'],
+  },
+  11155111: {
+    chainId: 11155111,
+    chainName: 'Sepolia',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://rpc.sepolia.org'],
+    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+    isTestnet: true,
+  },
+  80002: {
+    chainId: 80002,
+    chainName: 'Polygon Amoy',
+    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    rpcUrls: ['https://rpc-amoy.polygon.technology'],
+    blockExplorerUrls: ['https://amoy.polygonscan.com'],
+    isTestnet: true,
+  },
+  97: {
+    chainId: 97,
+    chainName: 'BNB Testnet',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545'],
+    blockExplorerUrls: ['https://testnet.bscscan.com'],
+    isTestnet: true,
+  },
+  31337: {
+    chainId: 31337,
+    chainName: 'Localhost',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['http://127.0.0.1:8545'],
+    blockExplorerUrls: [],
+    isTestnet: true,
+  },
+}
+
+// ── Context ───────────────────────────────────────────────────────────────────
+
 export interface Web3ContextValue {
   provider: BrowserProvider | null
   signer: JsonRpcSigner | null
@@ -45,7 +121,7 @@ export function Web3Provider({ children }: Web3ProviderProps) {
   const [chainId, setChainId] = useState<number | null>(null)
 
   const initProvider = useCallback(async (ethereum: unknown) => {
-    const web3Provider = new ethers.BrowserProvider(ethereum as Parameters<typeof ethers.BrowserProvider>[0])
+    const web3Provider = new ethers.BrowserProvider(ethereum as ethers.Eip1193Provider)
     const network = await web3Provider.getNetwork()
     const accounts = await web3Provider.listAccounts()
 
@@ -71,8 +147,9 @@ export function Web3Provider({ children }: Web3ProviderProps) {
     const ethereum = (window as unknown as { ethereum?: { on: (event: string, handler: (...args: unknown[]) => void) => void; removeListener: (event: string, handler: (...args: unknown[]) => void) => void } }).ethereum
     if (!ethereum) return
 
-    const handleAccountsChanged = (accounts: unknown[]) => {
-      if ((accounts as string[]).length === 0) {
+    const handleAccountsChanged = (...args: unknown[]) => {
+      const accounts = args[0] as string[]
+      if (accounts.length === 0) {
         setSigner(null)
         setAccount(null)
       } else {
@@ -96,7 +173,7 @@ export function Web3Provider({ children }: Web3ProviderProps) {
   const connect = useCallback(async () => {
     const ethereum = (window as unknown as { ethereum?: { request: (args: { method: string }) => Promise<unknown> } }).ethereum
     if (!ethereum) {
-      alert('请安装 MetaMask 浏览器插件')
+      alert('请安装 MetaMask 或其他 Web3 钱包浏览器插件')
       return
     }
     await ethereum.request({ method: 'eth_requestAccounts' })
@@ -117,11 +194,27 @@ export function Web3Provider({ children }: Web3ProviderProps) {
     try {
       await ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexChainId }] })
     } catch (err: unknown) {
-      // Error code 4902: chain not added to MetaMask yet
+      // Error code 4902: chain not added to wallet yet — try adding it
       if ((err as { code?: number }).code === 4902) {
-        console.warn('Chain not found in MetaMask. Please add it manually.')
+        const chainConfig = CHAIN_CONFIGS[targetChainId]
+        if (!chainConfig) {
+          throw new Error(`Chain ${targetChainId} not supported`)
+        }
+        await ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: hexChainId,
+              chainName: chainConfig.chainName,
+              nativeCurrency: chainConfig.nativeCurrency,
+              rpcUrls: chainConfig.rpcUrls,
+              blockExplorerUrls: chainConfig.blockExplorerUrls,
+            },
+          ],
+        })
+      } else {
+        throw err
       }
-      throw err
     }
   }, [])
 
