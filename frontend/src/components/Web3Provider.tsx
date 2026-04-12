@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { ethers, type BrowserProvider, type JsonRpcSigner } from 'ethers'
 
-interface Web3ContextValue {
+export interface Web3ContextValue {
   provider: BrowserProvider | null
   signer: JsonRpcSigner | null
   account: string | null

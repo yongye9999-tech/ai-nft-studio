@@ -45,7 +45,7 @@ const TABS: FilterTab[] = ['全部', '上架中', '拍卖中']
 
 export default function MarketplacePage() {
   const [activeTab, setActiveTab] = useState<FilterTab>('全部')
-  const [nfts, setNfts] = useState<NFTItem[]>(MOCK_NFTS)
+  const [nfts] = useState<NFTItem[]>(MOCK_NFTS)
   const [loading, setLoading] = useState(false)
   const { buyItem } = useMarketplace()
 
