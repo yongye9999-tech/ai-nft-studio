@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: '/', label: '首页' },
   { href: '/create', label: '创作' },
   { href: '/marketplace', label: '市场' },
+  { href: '/leaderboard', label: '排行榜' },
   { href: '/profile', label: '个人' },
 ]
 
