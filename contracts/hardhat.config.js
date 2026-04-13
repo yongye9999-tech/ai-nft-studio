@@ -8,9 +8,13 @@ const POLYGON_RPC_URL = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com"
 const AMOY_RPC_URL = process.env.AMOY_RPC_URL || "https://rpc-amoy.polygon.technology";
 const BSC_TESTNET_RPC_URL =
   process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545";
+const ARBITRUM_RPC_URL = process.env.ARBITRUM_RPC_URL || "https://arb1.arbitrum.io/rpc";
+const BASE_RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 const POLYGONSCAN_API_KEY = process.env.POLYGONSCAN_API_KEY || "";
 const BSCSCAN_API_KEY = process.env.BSCSCAN_API_KEY || "";
+const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY || "";
+const BASESCAN_API_KEY = process.env.BASESCAN_API_KEY || "";
 
 /** @type {import('hardhat/config').HardhatUserConfig} */
 module.exports = {
@@ -19,7 +23,7 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200,
+        runs: 1000,
       },
       evmVersion: "cancun",
     },
@@ -60,6 +64,16 @@ module.exports = {
       accounts: [PRIVATE_KEY],
       chainId: 97,
     },
+    arbitrum: {
+      url: ARBITRUM_RPC_URL,
+      accounts: [PRIVATE_KEY],
+      chainId: 42161,
+    },
+    base: {
+      url: BASE_RPC_URL,
+      accounts: [PRIVATE_KEY],
+      chainId: 8453,
+    },
   },
   etherscan: {
     apiKey: {
@@ -68,6 +82,8 @@ module.exports = {
       polygon: POLYGONSCAN_API_KEY,
       polygonAmoy: POLYGONSCAN_API_KEY,
       bscTestnet: BSCSCAN_API_KEY,
+      arbitrumOne: ARBISCAN_API_KEY,
+      base: BASESCAN_API_KEY,
     },
     customChains: [
       {
@@ -76,6 +92,14 @@ module.exports = {
         urls: {
           apiURL: "https://api-amoy.polygonscan.com/api",
           browserURL: "https://amoy.polygonscan.com",
+        },
+      },
+      {
+        network: "base",
+        chainId: 8453,
+        urls: {
+          apiURL: "https://api.basescan.org/api",
+          browserURL: "https://basescan.org",
         },
       },
     ],

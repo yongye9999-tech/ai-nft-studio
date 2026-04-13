@@ -75,6 +75,15 @@ export default function MarketplacePage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold gradient-text mb-2">🛒 NFT 交易市场</h1>
         <p className="text-gray-400">探索、购买和竞拍独一无二的 AI 生成数字艺术</p>
+        {/* Fee info */}
+        <div className="mt-3 inline-flex items-center gap-3 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-1.5">
+          <span>平台手续费：</span>
+          <span className="text-orange-400">小额(&lt;0.1 ETH) 3%</span>
+          <span>·</span>
+          <span className="text-violet-400">中额(0.1–1 ETH) 2.5%</span>
+          <span>·</span>
+          <span className="text-green-400">大额(&gt;1 ETH) 2%</span>
+        </div>
       </div>
 
       {/* Filter Tabs */}

@@ -34,6 +34,24 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, Pausable
     ///         Only applied when the address is NOT in freeMintList.
     mapping(address => uint256) public mintFeeDiscount;
 
+    // ─── Creator Milestone Incentives ─────────────────────────────────────────
+
+    /// @notice Number of NFTs minted by each creator (msg.sender).
+    mapping(address => uint256) public creatorMintCount;
+
+    /// @notice Milestone thresholds (cumulative mints per creator).
+    uint256 public constant MILESTONE_THRESHOLD_1 = 10;
+    uint256 public constant MILESTONE_THRESHOLD_2 = 50;
+    uint256 public constant MILESTONE_THRESHOLD_3 = 100;
+
+    /// @notice ETH reward amounts for each milestone (owner-configurable).
+    uint256 public milestoneReward1 = 0.005 ether;
+    uint256 public milestoneReward2 = 0.02 ether;
+    uint256 public milestoneReward3 = 0.05 ether;
+
+    /// @notice Bitmask of milestones already claimed per creator (bit 0 = M1, bit 1 = M2, bit 2 = M3).
+    mapping(address => uint8) public milestonesClaimed;
+
     // ─── Events ──────────────────────────────────────────────────────────────
 
     /// @notice Emitted when a new NFT is minted.
@@ -60,6 +78,14 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, Pausable
     /// @param to     Recipient address.
     /// @param amount Amount withdrawn in wei.
     event Withdrawn(address indexed to, uint256 amount);
+
+    /// @notice Emitted when a creator claims a milestone reward.
+    /// @param creator Address of the creator.
+    /// @param amount  Total ETH reward paid out.
+    event MilestoneRewardClaimed(address indexed creator, uint256 amount);
+
+    /// @notice Emitted when milestone reward amounts are updated.
+    event MilestoneRewardsUpdated(uint256 reward1, uint256 reward2, uint256 reward3);
 
     // ─── Constructor ─────────────────────────────────────────────────────────
 
@@ -114,6 +140,7 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, Pausable
         // Effects: update state before any external calls
         tokenCounter++;
         tokenId = tokenCounter;
+        creatorMintCount[msg.sender]++;
         _setTokenURI(tokenId, uri);
 
         // Emit event before external calls (strict CEI — events are Effects)
@@ -168,6 +195,33 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, Pausable
     }
 
     /**
+     * @notice Sets the same mint fee discount for multiple addresses in one call.
+     * @dev Useful for bulk-rewarding active creators each month.
+     * @param creators    Array of addresses to receive the discount.
+     * @param discountBps Discount in basis points (0–10 000).
+     */
+    function setBatchMintFeeDiscount(address[] calldata creators, uint256 discountBps) external onlyOwner {
+        require(discountBps <= 10_000, "AINFTCollection: discount cannot exceed 100%");
+        for (uint256 i = 0; i < creators.length; i++) {
+            mintFeeDiscount[creators[i]] = discountBps;
+            emit MintFeeDiscountUpdated(creators[i], discountBps);
+        }
+    }
+
+    /**
+     * @notice Updates the ETH reward amounts for the three creator milestones.
+     * @param r1 Reward for reaching MILESTONE_THRESHOLD_1 (10 mints).
+     * @param r2 Reward for reaching MILESTONE_THRESHOLD_2 (50 mints).
+     * @param r3 Reward for reaching MILESTONE_THRESHOLD_3 (100 mints).
+     */
+    function setMilestoneRewards(uint256 r1, uint256 r2, uint256 r3) external onlyOwner {
+        milestoneReward1 = r1;
+        milestoneReward2 = r2;
+        milestoneReward3 = r3;
+        emit MilestoneRewardsUpdated(r1, r2, r3);
+    }
+
+    /**
      * @notice Sets (or overrides) the default ERC2981 royalty for the entire collection.
      * @dev feeNumerator is in basis points (e.g., 500 = 5%). Max is 10% (1000) enforced by caller convention.
      * @param receiver     Address that receives royalty payments.
@@ -203,6 +257,45 @@ contract AINFTCollection is ERC721, ERC721URIStorage, ERC2981, Ownable, Pausable
         (bool success, ) = payable(owner()).call{value: balance}("");
         require(success, "AINFTCollection: withdraw failed");
         emit Withdrawn(owner(), balance);
+    }
+
+    // ─── Creator Incentives ───────────────────────────────────────────────────
+
+    /**
+     * @notice Claims all available milestone rewards for the caller.
+     * @dev Checks how many NFTs msg.sender has minted and pays out unclaimed milestone ETH.
+     *      Milestones: 10 mints → milestoneReward1, 50 mints → milestoneReward2,
+     *                  100 mints → milestoneReward3.
+     *      Reward funds come from the mintFee accumulation in the contract.
+     *      The owner should ensure the contract holds sufficient balance before creators claim.
+     */
+    function claimMilestoneReward() external nonReentrant {
+        uint256 count = creatorMintCount[msg.sender];
+        uint8 claimed = milestonesClaimed[msg.sender];
+        uint256 rewardAmount = 0;
+
+        if (count >= MILESTONE_THRESHOLD_1 && (claimed & 1) == 0) {
+            rewardAmount += milestoneReward1;
+            claimed |= 1;
+        }
+        if (count >= MILESTONE_THRESHOLD_2 && (claimed & 2) == 0) {
+            rewardAmount += milestoneReward2;
+            claimed |= 2;
+        }
+        if (count >= MILESTONE_THRESHOLD_3 && (claimed & 4) == 0) {
+            rewardAmount += milestoneReward3;
+            claimed |= 4;
+        }
+
+        require(rewardAmount > 0, "AINFTCollection: no rewards to claim");
+        require(address(this).balance >= rewardAmount, "AINFTCollection: insufficient contract balance");
+
+        milestonesClaimed[msg.sender] = claimed;
+
+        (bool success, ) = payable(msg.sender).call{value: rewardAmount}("");
+        require(success, "AINFTCollection: reward transfer failed");
+
+        emit MilestoneRewardClaimed(msg.sender, rewardAmount);
     }
 
     // ─── Overrides ────────────────────────────────────────────────────────────

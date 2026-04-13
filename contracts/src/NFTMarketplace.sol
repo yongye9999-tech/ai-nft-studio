@@ -11,7 +11,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @title NFTMarketplace
  * @notice A decentralized marketplace for buying, selling, and auctioning ERC721 NFTs.
  * @dev Supports fixed-price listings and timed auctions. Royalties are paid out via ERC2981
- *      on every completed sale. The platform retains a 2.5% fee on each transaction.
+ *      on every completed sale. The platform retains a tiered fee on each transaction
+ *      (3% for <0.1 ETH, 2.5% for 0.1–1 ETH, 2% for >1 ETH).
+ *      A 48-hour timelock governs fee-rate changes. New sellers get one free first sale.
+ *      Platform fees are split across treasury (60%), rewards pool (30%), and ops fund (10%).
  *      A Pausable mechanism allows the owner to halt all market operations in an emergency.
  *      Auctions are capped at MAX_AUCTION_DURATION to prevent indefinitely locked NFTs.
  *      The owner may force-delist any listing or cancel any auction (e.g. for DMCA compliance).
@@ -19,14 +22,23 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     // ─── Constants ────────────────────────────────────────────────────────────
 
-    /// @notice Platform fee in basis points (250 = 2.5%).
+    /// @notice Mid-tier platform fee in basis points (250 = 2.5%, applies to 0.1–1 ETH sales).
     uint256 public platformFee = 250;
+
+    /// @notice Small-sale fee in basis points (300 = 3%, applies when salePrice < 0.1 ETH).
+    uint256 public feeRateLow = 300;
+
+    /// @notice Large-sale fee in basis points (200 = 2%, applies when salePrice > 1 ETH).
+    uint256 public feeRateHigh = 200;
 
     /// @dev Denominator for basis-point calculations.
     uint256 private constant FEE_DENOMINATOR = 10_000;
 
     /// @notice Maximum allowed auction duration to prevent indefinitely locked NFTs.
     uint256 public constant MAX_AUCTION_DURATION = 30 days;
+
+    /// @notice Delay before a proposed fee change takes effect (48 hours).
+    uint256 public constant FEE_TIMELOCK_DELAY = 48 hours;
 
     // ─── Data Structures ──────────────────────────────────────────────────────
 
@@ -76,8 +88,24 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     /// @dev auctions[nftContract][tokenId] => Auction
     mapping(address => mapping(uint256 => Auction)) private _auctions;
 
-    /// @dev Accumulated platform fees available for withdrawal by the owner.
+    /// @dev Accumulated platform fees available for withdrawal by the owner (total).
     uint256 public accumulatedFees;
+
+    /// @notice Portion of accumulated fees allocated to the creator rewards pool (30% of total).
+    uint256 public rewardsPoolBalance;
+
+    /// @notice Portion of accumulated fees allocated to the operations fund (10% of total).
+    uint256 public opsFundBalance;
+
+    /// @notice Pending new mid-tier platform fee waiting for timelock to expire.
+    uint256 public pendingPlatformFee;
+
+    /// @notice Timestamp after which pendingPlatformFee may be applied (0 = no pending change).
+    uint256 public platformFeeChangeTime;
+
+    /// @notice Sellers who are entitled to one fee-free first sale.
+    /// @dev Granted by the owner; consumed automatically on first sale.
+    mapping(address => bool) public firstSaleFreeGranted;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -127,6 +155,15 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Emitted when an active auction is force-cancelled by the owner.
     event AuctionCancelled(address indexed nftContract, uint256 indexed tokenId);
+
+    /// @notice Emitted when a new mid-tier platform fee is proposed (subject to 48-hour timelock).
+    event PlatformFeeProposed(uint256 newFee, uint256 executeAfter);
+
+    /// @notice Emitted when a proposed platform fee is applied after the timelock.
+    event PlatformFeeUpdated(uint256 newFee);
+
+    /// @notice Emitted when accumulated fees are withdrawn by the owner.
+    event FeesWithdrawn(uint256 amount);
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
@@ -373,12 +410,40 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     // ─── Owner Functions ──────────────────────────────────────────────────────
 
     /**
-     * @notice Updates the platform fee rate.
-     * @param newFee New fee in basis points (max 1000 = 10%).
+     * @notice Proposes a new mid-tier platform fee, subject to a 48-hour timelock.
+     * @dev The change does not take effect until executePlatformFee() is called after the delay.
+     * @param newFee New mid-tier fee in basis points (max 500 = 5%).
      */
-    function setPlatformFee(uint256 newFee) external onlyOwner {
-        require(newFee <= 1000, "Marketplace: fee cannot exceed 10%");
+    function proposePlatformFee(uint256 newFee) external onlyOwner {
+        require(newFee <= 500, "Marketplace: fee cannot exceed 5%");
+        pendingPlatformFee = newFee;
+        platformFeeChangeTime = block.timestamp + FEE_TIMELOCK_DELAY;
+        emit PlatformFeeProposed(newFee, platformFeeChangeTime);
+    }
+
+    /**
+     * @notice Applies the previously proposed fee after the 48-hour timelock has elapsed.
+     * @dev Reverts if no fee change is pending or the timelock has not yet expired.
+     */
+    function executePlatformFee() external onlyOwner {
+        require(platformFeeChangeTime != 0, "Marketplace: no pending fee change");
+        require(block.timestamp >= platformFeeChangeTime, "Marketplace: timelock not expired");
+        uint256 newFee = pendingPlatformFee;
         platformFee = newFee;
+        pendingPlatformFee = 0;
+        platformFeeChangeTime = 0;
+        emit PlatformFeeUpdated(newFee);
+    }
+
+    /**
+     * @notice Grants one free first-sale (zero platform fee) to the specified sellers.
+     * @dev The benefit is consumed on the seller's next completed sale. Owner-only.
+     * @param sellers Array of seller addresses to grant the benefit to.
+     */
+    function grantFirstSaleFree(address[] calldata sellers) external onlyOwner {
+        for (uint256 i = 0; i < sellers.length; i++) {
+            firstSaleFreeGranted[sellers[i]] = true;
+        }
     }
 
     /**
@@ -398,14 +463,18 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Withdraws accumulated platform fees to the owner.
+     * @notice Withdraws all accumulated platform fees to the owner.
+     * @dev Resets treasury, rewards pool, and ops fund balances.
      */
     function withdrawFees() external onlyOwner nonReentrant {
         uint256 amount = accumulatedFees;
         require(amount > 0, "Marketplace: no fees to withdraw");
         accumulatedFees = 0;
+        rewardsPoolBalance = 0;
+        opsFundBalance = 0;
         (bool success, ) = payable(owner()).call{value: amount}("");
         require(success, "Marketplace: withdrawal failed");
+        emit FeesWithdrawn(amount);
     }
 
     // ─── View Functions ───────────────────────────────────────────────────────
@@ -439,8 +508,11 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     // ─── Internal Helpers ─────────────────────────────────────────────────────
 
     /**
-     * @dev Distributes a sale payment: deducts royalties (ERC2981) and platform fee,
+     * @dev Distributes a sale payment: deducts royalties (ERC2981) and a tiered platform fee,
      *      sends the remainder to the seller, and accumulates the platform fee.
+     *      Sellers who have been granted a first-sale-free benefit pay zero platform fee
+     *      on this transaction; the benefit is consumed immediately.
+     *      The platform fee is split into treasury (60%), rewards pool (30%), ops fund (10%).
      * @param nftContract Address of the ERC721 token contract (may implement ERC2981).
      * @param tokenId     Token ID being sold.
      * @param seller      Address of the seller.
@@ -466,10 +538,23 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
             }
         } catch {}
 
-        uint256 fee = (salePrice * platformFee) / FEE_DENOMINATOR;
+        // Determine effective platform fee rate (tiered + first-sale-free)
+        uint256 fee = 0;
+        if (firstSaleFreeGranted[seller]) {
+            // Consume the first-sale-free benefit
+            firstSaleFreeGranted[seller] = false;
+        } else {
+            fee = _getEffectiveFee(salePrice);
+        }
+
         uint256 sellerProceeds = salePrice - fee - royaltyAmount;
 
-        accumulatedFees += fee;
+        // Update fee-split accounting
+        if (fee > 0) {
+            accumulatedFees += fee;
+            rewardsPoolBalance += (fee * 30) / 100;
+            opsFundBalance += (fee * 10) / 100;
+        }
 
         if (royaltyAmount > 0 && royaltyReceiver != address(0)) {
             (bool royaltySuccess, ) = payable(royaltyReceiver).call{value: royaltyAmount}("");
@@ -478,6 +563,26 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
 
         (bool sellerSuccess, ) = payable(seller).call{value: sellerProceeds}("");
         require(sellerSuccess, "Marketplace: seller transfer failed");
+    }
+
+    /**
+     * @dev Returns the tiered platform fee for a given sale price:
+     *      <0.1 ETH  → feeRateLow  (default 3%)
+     *      ≤1 ETH    → platformFee (default 2.5%)
+     *      >1 ETH    → feeRateHigh (default 2%)
+     * @param salePrice Sale price in wei.
+     * @return fee Platform fee in wei.
+     */
+    function _getEffectiveFee(uint256 salePrice) internal view returns (uint256) {
+        uint256 rate;
+        if (salePrice > 1 ether) {
+            rate = feeRateHigh;
+        } else if (salePrice >= 0.1 ether) {
+            rate = platformFee;
+        } else {
+            rate = feeRateLow;
+        }
+        return (salePrice * rate) / FEE_DENOMINATOR;
     }
 }
 

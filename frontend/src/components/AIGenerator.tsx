@@ -2,24 +2,8 @@
 
 import { useState } from 'react'
 import axios from 'axios'
-
-type AIEngine = 'huggingface' | 'openai'
-
-interface Style {
-  id: string
-  label: string
-  icon: string
-  prompt: string
-}
-
-const STYLES: Style[] = [
-  { id: 'cyberpunk', label: '赛博朋克', icon: '🌆', prompt: 'cyberpunk neon city, futuristic' },
-  { id: 'watercolor', label: '水彩', icon: '🎨', prompt: 'watercolor painting, soft colors, artistic' },
-  { id: 'oilpaint', label: '油画', icon: '🖼️', prompt: 'oil painting, classic art, detailed brushwork' },
-  { id: 'pixel', label: '像素艺术', icon: '👾', prompt: 'pixel art, 8-bit style, retro game' },
-  { id: 'anime', label: '日本动漫', icon: '⛩️', prompt: 'anime style, Japanese animation, manga' },
-  { id: '3d', label: '3D 渲染', icon: '💎', prompt: '3D render, photorealistic, octane render, 8K' },
-]
+import { STYLE_OPTIONS, ENGINE_OPTIONS, QUALITY_OPTIONS } from '@/lib/ai-engines'
+import type { AIEngine, ImageQuality } from '@/lib/ai-engines'
 
 interface AIGeneratorProps {
   onImageGenerated: (imageUrl: string, imageData: string, engine?: string, model?: string, prompt?: string) => void
@@ -27,8 +11,9 @@ interface AIGeneratorProps {
 
 export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
   const [prompt, setPrompt] = useState('')
-  const [selectedStyle, setSelectedStyle] = useState<string>(STYLES[0].id)
+  const [selectedStyle, setSelectedStyle] = useState<string>(STYLE_OPTIONS[0].id)
   const [engine, setEngine] = useState<AIEngine>('huggingface')
+  const [quality, setQuality] = useState<ImageQuality>('standard')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -41,11 +26,12 @@ export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
     setLoading(true)
     setError(null)
     try {
-      const style = STYLES.find((s) => s.id === selectedStyle)?.prompt ?? ''
+      const style = STYLE_OPTIONS.find((s) => s.id === selectedStyle)?.prompt ?? ''
       const res = await axios.post<{ imageUrl: string; imageData?: string; engine?: string; model?: string }>('/api/generate', {
         prompt: prompt.trim(),
         style,
         engine,
+        quality,
       })
       const { imageUrl, imageData, engine: resEngine, model: resModel } = res.data
       setPreviewUrl(imageUrl)
@@ -60,6 +46,8 @@ export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
       setLoading(false)
     }
   }
+
+  const selectedEngineInfo = ENGINE_OPTIONS.find((e) => e.id === engine)
 
   return (
     <div className="glass-card p-6 space-y-5">
@@ -80,42 +68,79 @@ export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
       {/* Style selector */}
       <div>
         <label className="block text-sm text-gray-400 mb-2">艺术风格</label>
-        <div className="grid grid-cols-3 gap-2">
-          {STYLES.map((style) => (
+        <div className="grid grid-cols-5 gap-1.5">
+          {STYLE_OPTIONS.map((style) => (
             <button
               key={style.id}
               onClick={() => setSelectedStyle(style.id)}
-              className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-all duration-150 text-sm ${
+              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-150 text-xs ${
                 selectedStyle === style.id
                   ? 'border-violet-500 bg-violet-600/20 text-violet-300'
                   : 'border-gray-700 hover:border-gray-600 text-gray-400 hover:text-white'
               }`}
             >
-              <span className="text-xl">{style.icon}</span>
-              <span>{style.label}</span>
+              <span className="text-lg">{style.icon}</span>
+              <span className="leading-tight text-center">{style.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Engine toggle */}
+      {/* Engine selector */}
       <div>
         <label className="block text-sm text-gray-400 mb-2">AI 引擎</label>
-        <div className="flex rounded-lg overflow-hidden border border-gray-700">
-          {(['huggingface', 'openai'] as AIEngine[]).map((e) => (
+        <div className="grid grid-cols-1 gap-1.5">
+          {ENGINE_OPTIONS.map((opt) => (
             <button
-              key={e}
-              onClick={() => setEngine(e)}
+              key={opt.id}
+              onClick={() => setEngine(opt.id)}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all duration-150 text-sm ${
+                engine === opt.id
+                  ? 'border-violet-500 bg-violet-600/20 text-violet-300'
+                  : 'border-gray-700 hover:border-gray-600 text-gray-400 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span>{opt.icon}</span>
+                <span className="font-medium">{opt.label}</span>
+              </span>
+              <span className="flex items-center gap-2 text-xs text-gray-500">
+                <span>速度: {opt.speed}</span>
+                <span>·</span>
+                <span>{opt.note}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {selectedEngineInfo && (
+          <p className="mt-1.5 text-xs text-gray-500">
+            当前质量等级: <span className="text-violet-400">{selectedEngineInfo.quality}</span>
+          </p>
+        )}
+      </div>
+
+      {/* Quality selector */}
+      <div>
+        <label className="block text-sm text-gray-400 mb-2">图像质量</label>
+        <div className="flex rounded-lg overflow-hidden border border-gray-700">
+          {QUALITY_OPTIONS.map((q) => (
+            <button
+              key={q.id}
+              onClick={() => setQuality(q.id)}
+              title={q.description}
               className={`flex-1 py-2 text-sm font-medium transition-all duration-150 ${
-                engine === e
+                quality === q.id
                   ? 'bg-violet-600 text-white'
                   : 'bg-transparent text-gray-400 hover:text-white hover:bg-gray-800'
               }`}
             >
-              {e === 'huggingface' ? '🤗 HuggingFace' : '🌐 OpenAI'}
+              {q.label}
             </button>
           ))}
         </div>
+        <p className="mt-1 text-xs text-gray-500">
+          {QUALITY_OPTIONS.find((q) => q.id === quality)?.description}
+        </p>
       </div>
 
       {/* Error */}

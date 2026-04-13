@@ -255,6 +255,11 @@ export default function CreatePage() {
             {mintSuccess && (
               <div className="bg-violet-900/30 border border-violet-700 text-violet-300 rounded-lg p-3 text-sm break-all space-y-2">
                 <div>🎉 铸造成功！Tx: <span className="font-mono">{mintSuccess}</span></div>
+                <div className="text-xs text-gray-400 bg-violet-900/20 rounded p-2">
+                  🎯 <span className="text-violet-300">里程碑提示：</span>累计铸造 10 / 50 / 100 个 NFT 可在
+                  <a href="/profile" className="text-violet-400 underline mx-1">个人中心 → 我的激励</a>
+                  领取 ETH 里程碑奖励！
+                </div>
                 <a
                   href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`我刚在 AI+NFT Studio 上铸造了一件 AI 生成 NFT！🎨✨ ${mintForm.name || 'AI Generated NFT'} #NFT #AIArt #Web3`)}`}
                   target="_blank"
