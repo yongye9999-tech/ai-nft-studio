@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import axios from 'axios'
+import { checkRateLimit } from '@/lib/rate-limiter'
 
 interface UploadRequest {
   imageData: string
@@ -83,6 +84,15 @@ async function uploadMetadataToPinata(metadata: object): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  // ── Rate limiting ─────────────────────────────────────────────────────────
+  const rateLimit = checkRateLimit(req)
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: '请求过于频繁，请稍后再试' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+    )
+  }
+
   try {
     const body = (await req.json()) as UploadRequest
     const {
