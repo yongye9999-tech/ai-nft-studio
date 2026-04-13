@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.48.0",
     "axios": "^1.6.8",
     "ethers": "^6.11.1",
     "next": "15.5.15",
