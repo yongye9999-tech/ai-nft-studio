@@ -95,21 +95,39 @@ describe("AINFTCollection", function () {
       ).to.be.revertedWith("AINFTCollection: insufficient mint fee");
     });
 
-    it("should refund excess payment to the caller", async function () {
+    it("should revert minting to the zero address", async function () {
+      await expect(
+        nft.connect(user1).mint(ethers.ZeroAddress, TOKEN_URI, { value: MINT_FEE })
+      ).to.be.revertedWith("AINFTCollection: cannot mint to zero address");
+    });
+
+    it("should revert minting with an empty URI", async function () {
+      await expect(
+        nft.connect(user1).mint(user1.address, "", { value: MINT_FEE })
+      ).to.be.revertedWith("AINFTCollection: URI cannot be empty");
+    });
+
+    it("should store excess payment as a pending refund (pull pattern)", async function () {
       const overpayment = ethers.parseEther("0.1");
       const excess = overpayment - MINT_FEE;
 
-      const balanceBefore = await ethers.provider.getBalance(user1.address);
-      const tx = await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
-      const receipt = await tx.wait();
-      const gasUsed = receipt.gasUsed * (receipt.gasPrice || receipt.effectiveGasPrice);
-      const balanceAfter = await ethers.provider.getBalance(user1.address);
+      await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
 
-      // User paid MINT_FEE + gas, excess was refunded
-      expect(balanceBefore - balanceAfter).to.equal(MINT_FEE + gasUsed);
-      // Contract only holds the mint fee, not the overpayment
+      // Excess is stored, not immediately pushed back
+      expect(await nft.pendingRefunds(user1.address)).to.equal(excess);
+      // Contract holds mintFee + excess until withdrawn
       const contractBalance = await ethers.provider.getBalance(await nft.getAddress());
-      expect(contractBalance).to.equal(MINT_FEE);
+      expect(contractBalance).to.equal(overpayment);
+    });
+
+    it("should emit RefundPending on overpayment", async function () {
+      const overpayment = ethers.parseEther("0.1");
+      const excess = overpayment - MINT_FEE;
+      await expect(
+        nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment })
+      )
+        .to.emit(nft, "RefundPending")
+        .withArgs(user1.address, excess);
     });
 
     it("should revert when max supply is reached", async function () {
@@ -123,13 +141,54 @@ describe("AINFTCollection", function () {
     });
   });
 
+  // ── withdrawRefund ────────────────────────────────────────────────────────
+
+  describe("withdrawRefund", function () {
+    it("should allow payer to withdraw their pending refund", async function () {
+      const overpayment = ethers.parseEther("0.1");
+      const excess = overpayment - MINT_FEE;
+
+      await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
+
+      const balanceBefore = await ethers.provider.getBalance(user1.address);
+      const tx = await nft.connect(user1).withdrawRefund();
+      const receipt = await tx.wait();
+      const gasUsed = receipt.gasUsed * receipt.gasPrice;
+      const balanceAfter = await ethers.provider.getBalance(user1.address);
+
+      expect(balanceAfter - balanceBefore + gasUsed).to.equal(excess);
+      expect(await nft.pendingRefunds(user1.address)).to.equal(0);
+    });
+
+    it("should emit RefundWithdrawn on successful withdrawal", async function () {
+      const overpayment = ethers.parseEther("0.1");
+      const excess = overpayment - MINT_FEE;
+
+      await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
+      await expect(nft.connect(user1).withdrawRefund())
+        .to.emit(nft, "RefundWithdrawn")
+        .withArgs(user1.address, excess);
+    });
+
+    it("should revert withdrawRefund when there is no pending refund", async function () {
+      await expect(nft.connect(user1).withdrawRefund()).to.be.revertedWith(
+        "AINFTCollection: no pending refund"
+      );
+    });
+  });
+
   // ── Fee Collection ───────────────────────────────────────────────────────
 
   describe("Fee collection", function () {
-    it("should accumulate ETH in the contract after minting", async function () {
+    it("should accumulate mintFeeCollected after minting", async function () {
       await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: MINT_FEE });
-      const contractBalance = await ethers.provider.getBalance(await nft.getAddress());
-      expect(contractBalance).to.equal(MINT_FEE);
+      expect(await nft.mintFeeCollected()).to.equal(MINT_FEE);
+    });
+
+    it("should only count effectiveFee in mintFeeCollected (not excess)", async function () {
+      const overpayment = ethers.parseEther("0.1");
+      await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
+      expect(await nft.mintFeeCollected()).to.equal(MINT_FEE);
     });
 
     it("should allow owner to update mint fee", async function () {
@@ -163,6 +222,12 @@ describe("AINFTCollection", function () {
       await expect(
         nft.connect(owner).setDefaultRoyalty(user2.address, 1001)
       ).to.be.revertedWith("AINFTCollection: royalty cannot exceed 10%");
+    });
+
+    it("should revert if royalty receiver is the zero address", async function () {
+      await expect(
+        nft.connect(owner).setDefaultRoyalty(ethers.ZeroAddress, 500)
+      ).to.be.revertedWith("AINFTCollection: royalty receiver is zero address");
     });
 
     it("should revert setDefaultRoyalty when called by non-owner", async function () {
@@ -312,7 +377,7 @@ describe("AINFTCollection", function () {
   // ── Withdraw ─────────────────────────────────────────────────────────────
 
   describe("Withdraw", function () {
-    it("should allow owner to withdraw accumulated fees", async function () {
+    it("should allow owner to withdraw accumulated mint fees", async function () {
       await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: MINT_FEE });
 
       const ownerBalanceBefore = await ethers.provider.getBalance(owner.address);
@@ -331,6 +396,20 @@ describe("AINFTCollection", function () {
         .withArgs(owner.address, MINT_FEE);
     });
 
+    it("should only withdraw mintFeeCollected and not pending refunds", async function () {
+      const overpayment = ethers.parseEther("0.1");
+      await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: overpayment });
+
+      // withdraw() only takes mintFeeCollected (= MINT_FEE), leaves excess for user1
+      await expect(nft.connect(owner).withdraw())
+        .to.emit(nft, "Withdrawn")
+        .withArgs(owner.address, MINT_FEE);
+
+      // Pending refund for user1 is still available
+      expect(await nft.pendingRefunds(user1.address)).to.equal(overpayment - MINT_FEE);
+      expect(await nft.mintFeeCollected()).to.equal(0);
+    });
+
     it("should revert withdraw when balance is zero", async function () {
       await expect(nft.connect(owner).withdraw()).to.be.revertedWith(
         "AINFTCollection: nothing to withdraw"
@@ -342,6 +421,52 @@ describe("AINFTCollection", function () {
       await expect(nft.connect(user1).withdraw()).to.be.revertedWithCustomError(
         nft,
         "OwnableUnauthorizedAccount"
+      );
+    });
+  });
+
+  // ── receive() ETH deposits ────────────────────────────────────────────────
+
+  describe("receive() ETH deposit", function () {
+    it("should accept direct ETH deposits and emit FundsReceived", async function () {
+      const depositAmount = ethers.parseEther("0.05");
+      await expect(
+        owner.sendTransaction({ to: await nft.getAddress(), value: depositAmount })
+      )
+        .to.emit(nft, "FundsReceived")
+        .withArgs(owner.address, depositAmount);
+    });
+
+    it("deposit should not affect mintFeeCollected", async function () {
+      const depositAmount = ethers.parseEther("0.05");
+      await owner.sendTransaction({ to: await nft.getAddress(), value: depositAmount });
+      expect(await nft.mintFeeCollected()).to.equal(0);
+    });
+
+    it("deposited ETH should be usable for milestone rewards", async function () {
+      // Set tiny milestone rewards for easy testing
+      await nft.connect(owner).setMilestoneRewards(
+        ethers.parseEther("0.001"),
+        ethers.parseEther("0.002"),
+        ethers.parseEther("0.003")
+      );
+
+      // Mint 10 times to hit MILESTONE_THRESHOLD_1
+      for (let i = 0; i < 10; i++) {
+        await nft.connect(user1).mint(user1.address, TOKEN_URI, { value: MINT_FEE });
+      }
+
+      // Owner deposits ETH to fund the reward
+      await owner.sendTransaction({
+        to: await nft.getAddress(),
+        value: ethers.parseEther("0.01"),
+      });
+
+      // Owner withdraws mint fees — milestone funds remain because they were deposited separately
+      // (Actually owner must leave enough in contract; here we just verify claim works)
+      await expect(nft.connect(user1).claimMilestoneReward()).to.emit(
+        nft,
+        "MilestoneRewardClaimed"
       );
     });
   });
