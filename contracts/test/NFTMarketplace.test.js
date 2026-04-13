@@ -767,36 +767,69 @@ describe("NFTMarketplace", function () {
       );
     });
 
-    it("should accept a bid that meets the minimum increment", async function () {
+    it("should accept a bid at exactly the minimum increment boundary", async function () {
       await marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, ONE_DAY);
 
       const bid1 = ethers.parseEther("0.6");
       await marketplace.connect(bidder1).placeBid(nftAddr, tokenId, { value: bid1 });
 
-      // Minimum next bid = 0.6 + 1% = 0.606 ETH
-      const minNext = bid1 + (bid1 * 100n) / 10_000n;
+      // Minimum next bid = bid1 + 1% of bid1 = 0.606 ETH exactly
+      const exactMinNext = bid1 + (bid1 * 100n) / 10_000n;
       await expect(
-        marketplace.connect(bidder2).placeBid(nftAddr, tokenId, { value: minNext })
+        marketplace.connect(bidder2).placeBid(nftAddr, tokenId, { value: exactMinNext })
       ).not.to.be.reverted;
+    });
+
+    it("should reject a bid one wei below the minimum increment boundary", async function () {
+      await marketplace.connect(seller).createAuction(nftAddr, tokenId, START_PRICE, ONE_DAY);
+
+      const bid1 = ethers.parseEther("0.6");
+      await marketplace.connect(bidder1).placeBid(nftAddr, tokenId, { value: bid1 });
+
+      // One wei below the exact minimum (0.606 ETH - 1 wei)
+      const justBelowMin = bid1 + (bid1 * 100n) / 10_000n - 1n;
+      await expect(
+        marketplace.connect(bidder2).placeBid(nftAddr, tokenId, { value: justBelowMin })
+      ).to.be.revertedWith("Marketplace: bid increment too low");
     });
   });
 
-  // ── _distributePayment underflow guard ────────────────────────────────────
+  // ── _distributePayment royalty bounds check ────────────────────────────────
 
-  describe("_distributePayment underflow guard", function () {
-    it("should skip excessive royalty instead of underflowing", async function () {
-      // Deploy a mock NFT with 200% royalty (malicious)
-      // We can't deploy a custom mock easily here, so we test via reflection:
-      // The AINFTCollection itself has royalty <= 10%, so we verify normal path works
-      // and underflow guard logic is confirmed by the code change.
-      // A proper test would need a MockERC721WithExcessiveRoyalty — covered via code review.
+  describe("_distributePayment royalty bounds check", function () {
+    it("should skip excessive royalty (150% of salePrice) and complete the sale", async function () {
+      // Deploy the mock NFT that reports 150% royalty
+      const MockHighRoyaltyNFT = await ethers.getContractFactory("MockHighRoyaltyNFT");
+      const mockNFT = await MockHighRoyaltyNFT.deploy();
+      const mockNFTAddr = await mockNFT.getAddress();
 
+      // Seller mints a token from the mock
+      const tx = await mockNFT.connect(seller).mint(seller.address);
+      const receipt = await tx.wait();
+      const tokenId = 1n; // first token minted
+
+      // Approve marketplace
+      await mockNFT.connect(seller).approve(await marketplace.getAddress(), tokenId);
+
+      // List and buy — royalty (150%) + fee (2.5%) would exceed salePrice if applied
+      await marketplace.connect(seller).listItem(mockNFTAddr, tokenId, LIST_PRICE);
+
+      const sellerBefore = await ethers.provider.getBalance(seller.address);
+      await marketplace.connect(buyer).buyItem(mockNFTAddr, tokenId, { value: LIST_PRICE });
+      const sellerAfter = await ethers.provider.getBalance(seller.address);
+
+      // Royalty was skipped; seller should receive salePrice minus platform fee
+      const fee = (LIST_PRICE * 250n) / 10_000n;
+      expect(sellerAfter - sellerBefore).to.equal(LIST_PRICE - fee);
+    });
+
+    it("should apply royalty when it is within safe bounds", async function () {
       const tokenId = await mintNFT(seller);
       await approveMarketplace(seller, tokenId);
       const nftAddr = await nft.getAddress();
       await marketplace.connect(seller).listItem(nftAddr, tokenId, LIST_PRICE);
 
-      // Normal 5% royalty + 2.5% fee = 7.5% — well within salePrice, should succeed
+      // Normal 5% royalty + 2.5% fee = 7.5% — within salePrice
       await expect(
         marketplace.connect(buyer).buyItem(nftAddr, tokenId, { value: LIST_PRICE })
       ).not.to.be.reverted;

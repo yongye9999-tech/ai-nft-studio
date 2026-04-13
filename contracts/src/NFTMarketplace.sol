@@ -722,7 +722,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
                 receiver != address(0) &&
                 amount > 0 &&
                 receiver != seller &&
-                amount + fee <= salePrice  // underflow guard
+                amount + fee <= salePrice  // bounds check: skip royalty if it would exceed sale proceeds
             ) {
                 royaltyReceiver = receiver;
                 royaltyAmount = amount;
