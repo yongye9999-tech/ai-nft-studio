@@ -70,9 +70,10 @@ export function checkRateLimit(req: NextRequest): RateLimitResult {
   // Daily limit check
   if (entry.dailyCount >= DAILY_MAX) {
     store.set(ip, entry)
-    // Retry at midnight UTC
+    // Retry at next midnight UTC
     const midnight = new Date()
-    midnight.setUTCHours(24, 0, 0, 0)
+    midnight.setUTCDate(midnight.getUTCDate() + 1)
+    midnight.setUTCHours(0, 0, 0, 0)
     return { success: false, retryAfter: Math.ceil((midnight.getTime() - now) / 1000) }
   }
 
