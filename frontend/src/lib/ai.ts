@@ -5,8 +5,6 @@
  */
 
 export {
-  generateWithHuggingFace,
-  generateWithOpenAI,
   generateImage,
   STYLE_PROMPTS,
   STYLE_OPTIONS,

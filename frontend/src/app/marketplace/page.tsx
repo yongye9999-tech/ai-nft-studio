@@ -78,11 +78,11 @@ export default function MarketplacePage() {
         {/* Fee info */}
         <div className="mt-3 inline-flex items-center gap-3 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-1.5">
           <span>平台手续费：</span>
-          <span className="text-orange-400">小额(&lt;0.1 ETH) 3%</span>
+          <span className="text-orange-400">小额({'<'}0.1 ETH) 3%</span>
           <span>·</span>
           <span className="text-violet-400">中额(0.1–1 ETH) 2.5%</span>
           <span>·</span>
-          <span className="text-green-400">大额(&gt;1 ETH) 2%</span>
+          <span className="text-green-400">大额({'>'}1 ETH) 2%</span>
         </div>
       </div>
 

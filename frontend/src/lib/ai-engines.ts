@@ -72,42 +72,6 @@ export interface GenerateResult {
 }
 
 /**
- * Generates an image using HuggingFace SDXL via the Next.js API route.
- */
-export async function generateWithHuggingFace(
-  prompt: string,
-  styleId: string,
-  quality?: ImageQuality
-): Promise<GenerateResult> {
-  const stylePrompt = STYLE_PROMPTS[styleId] ?? ''
-  const res = await axios.post<GenerateResult>('/api/generate', {
-    prompt,
-    style: stylePrompt,
-    engine: 'huggingface',
-    quality,
-  })
-  return res.data
-}
-
-/**
- * Generates an image using OpenAI DALL-E 3 via the Next.js API route.
- */
-export async function generateWithOpenAI(
-  prompt: string,
-  styleId: string,
-  quality?: ImageQuality
-): Promise<GenerateResult> {
-  const stylePrompt = STYLE_PROMPTS[styleId] ?? ''
-  const res = await axios.post<GenerateResult>('/api/generate', {
-    prompt,
-    style: stylePrompt,
-    engine: 'openai',
-    quality,
-  })
-  return res.data
-}
-
-/**
  * Dispatches image generation to the chosen AI engine.
  */
 export async function generateImage(

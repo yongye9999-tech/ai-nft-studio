@@ -68,7 +68,7 @@ export default function AIGenerator({ onImageGenerated }: AIGeneratorProps) {
       {/* Style selector */}
       <div>
         <label className="block text-sm text-gray-400 mb-2">艺术风格</label>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
           {STYLE_OPTIONS.map((style) => (
             <button
               key={style.id}

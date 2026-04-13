@@ -222,7 +222,7 @@ export default function AdminPage() {
               <div className="text-center">
                 <p className="text-xs text-gray-500 mb-1">协议金库 (60%)</p>
                 <p className="text-lg font-bold text-white">
-                  {(parseFloat(stats.accumulatedFees) * 0.6).toFixed(6)} ETH
+                  {(parseFloat(stats.accumulatedFees) - parseFloat(stats.rewardsPoolBalance) - parseFloat(stats.opsFundBalance)).toFixed(6)} ETH
                 </p>
               </div>
               <div className="text-center border-x border-gray-700">
@@ -241,7 +241,7 @@ export default function AdminPage() {
             <h2 className="font-semibold text-violet-300 mb-4">📊 动态手续费档位</h2>
             <div className="grid grid-cols-3 gap-3 text-sm mb-4">
               <div className="bg-gray-800/50 rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">小额 (&lt;0.1 ETH)</p>
+                <p className="text-xs text-gray-500 mb-1">{'小额 (<0.1 ETH)'}</p>
                 <p className="text-xl font-bold text-orange-400">{(stats.feeRateLow / 100).toFixed(1)}%</p>
               </div>
               <div className="bg-violet-900/30 rounded-lg p-3 text-center border border-violet-700/30">
@@ -250,7 +250,7 @@ export default function AdminPage() {
                 <p className="text-xs text-gray-600 mt-0.5">当前基础费率</p>
               </div>
               <div className="bg-gray-800/50 rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">大额 (&gt;1 ETH)</p>
+                <p className="text-xs text-gray-500 mb-1">{'大额 (>1 ETH)'}</p>
                 <p className="text-xl font-bold text-green-400">{(stats.feeRateHigh / 100).toFixed(1)}%</p>
               </div>
             </div>
