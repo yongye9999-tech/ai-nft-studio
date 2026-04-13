@@ -12,15 +12,22 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @notice A decentralized marketplace for buying, selling, and auctioning ERC721 NFTs.
  * @dev Supports fixed-price listings and timed auctions. Royalties are paid out via ERC2981
  *      on every completed sale. The platform retains a tiered fee on each transaction
- *      (3% for <0.1 ETH, 2.5% for 0.1–1 ETH, 2% for >1 ETH).
- *      A 48-hour timelock governs fee-rate changes. New sellers get one free first sale.
- *      Platform fees are split across treasury (60%), rewards pool (30%), and ops fund (10%).
- *      A Pausable mechanism allows the owner to halt all market operations in an emergency.
+ *      (3% for <0.1 ETH, 2.5% for 0.1–1 ETH, 2% for >1 ETH). All three fee tiers can be
+ *      updated via a 48-hour timelock. New sellers get one free first sale.
+ *      Platform fees are split across three real sub-balances: treasury (60%), rewards pool (30%),
+ *      and ops fund (10%) — each withdrawable independently.
+ *      Bid refunds use the pull-payment pattern (pendingReturns / withdrawBid()) to prevent a
+ *      malicious bidder contract from blocking all subsequent bids by rejecting ETH.
+ *      A Pausable mechanism allows the owner to halt all market operations in an emergency,
+ *      including endAuction.
+ *      A token may not be simultaneously listed and auctioned.
+ *      Auction structs and listing structs are deleted from storage after use to refund gas.
  *      Auctions are capped at MAX_AUCTION_DURATION to prevent indefinitely locked NFTs.
- *      The owner may force-delist any listing or cancel any auction (e.g. for DMCA compliance).
+ *      The owner may force-delist any listing or cancel any auction (e.g. for DMCA compliance);
+ *      these emit distinct ForcedDelisted / ForcedAuctionCancelled events.
  */
 contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
-    // ─── Constants ────────────────────────────────────────────────────────────
+    // ─── Fee Configuration ────────────────────────────────────────────────────
 
     /// @notice Mid-tier platform fee in basis points (250 = 2.5%, applies to 0.1–1 ETH sales).
     uint256 public platformFee = 250;
@@ -39,6 +46,30 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Delay before a proposed fee change takes effect (48 hours).
     uint256 public constant FEE_TIMELOCK_DELAY = 48 hours;
+
+    // ─── Fee Timelock State ───────────────────────────────────────────────────
+
+    /// @notice Pending new mid-tier platform fee waiting for timelock to expire.
+    uint256 public pendingPlatformFee;
+    /// @notice Timestamp after which pendingPlatformFee may be applied (0 = no pending change).
+    uint256 public platformFeeChangeTime;
+
+    /// @notice Pending new low-tier fee rate waiting for timelock to expire.
+    uint256 public pendingFeeRateLow;
+    /// @notice Timestamp after which pendingFeeRateLow may be applied (0 = no pending change).
+    uint256 public feeRateLowChangeTime;
+
+    /// @notice Pending new high-tier fee rate waiting for timelock to expire.
+    uint256 public pendingFeeRateHigh;
+    /// @notice Timestamp after which pendingFeeRateHigh may be applied (0 = no pending change).
+    uint256 public feeRateHighChangeTime;
+
+    // ─── Minimum Bid Increment ────────────────────────────────────────────────
+
+    /// @notice Minimum increment over the current highest bid, in basis points.
+    ///         Default is 100 (1%). A bid must exceed the current highest bid by at least
+    ///         (currentHighestBid * minBidIncrementBps / 10_000).
+    uint256 public minBidIncrementBps = 100;
 
     // ─── Data Structures ──────────────────────────────────────────────────────
 
@@ -88,24 +119,27 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     /// @dev auctions[nftContract][tokenId] => Auction
     mapping(address => mapping(uint256 => Auction)) private _auctions;
 
-    /// @dev Accumulated platform fees available for withdrawal by the owner (total).
+    /// @notice Total accumulated platform fees (sum of all three sub-balances).
     uint256 public accumulatedFees;
 
-    /// @notice Portion of accumulated fees allocated to the creator rewards pool (30% of total).
+    /// @notice Treasury sub-balance (60% of each platform fee). Withdrawable via withdrawFees().
+    uint256 public treasuryBalance;
+
+    /// @notice Creator rewards pool sub-balance (30% of each platform fee).
+    ///         Withdrawable independently via withdrawRewardsPool().
     uint256 public rewardsPoolBalance;
 
-    /// @notice Portion of accumulated fees allocated to the operations fund (10% of total).
+    /// @notice Operations fund sub-balance (10% of each platform fee).
+    ///         Withdrawable independently via withdrawOpsFund().
     uint256 public opsFundBalance;
-
-    /// @notice Pending new mid-tier platform fee waiting for timelock to expire.
-    uint256 public pendingPlatformFee;
-
-    /// @notice Timestamp after which pendingPlatformFee may be applied (0 = no pending change).
-    uint256 public platformFeeChangeTime;
 
     /// @notice Sellers who are entitled to one fee-free first sale.
     /// @dev Granted by the owner; consumed automatically on first sale.
     mapping(address => bool) public firstSaleFreeGranted;
+
+    /// @notice Pending bid returns claimable by outbid or cancelled-auction bidders.
+    ///         Pull-payment pattern: bidders call withdrawBid() to retrieve their ETH.
+    mapping(address => uint256) public pendingReturns;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -125,8 +159,11 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         uint256 price
     );
 
-    /// @notice Emitted when a listing is cancelled by the seller or force-delisted by the owner.
+    /// @notice Emitted when a listing is cancelled voluntarily by the seller.
     event ListingCancelled(address indexed nftContract, uint256 indexed tokenId);
+
+    /// @notice Emitted when a listing is force-removed by the owner (distinct from voluntary cancel).
+    event ForcedDelisted(address indexed nftContract, uint256 indexed tokenId);
 
     /// @notice Emitted when a new auction is created.
     event AuctionCreated(
@@ -145,6 +182,9 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         uint256 bidAmount
     );
 
+    /// @notice Emitted when an outbid amount is stored for pull-payment retrieval.
+    event BidReturnPending(address indexed bidder, uint256 amount);
+
     /// @notice Emitted when an auction ends and the NFT is transferred (or returned).
     event AuctionEnded(
         address indexed winner,
@@ -153,8 +193,12 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         uint256 finalPrice
     );
 
-    /// @notice Emitted when an active auction is force-cancelled by the owner.
+    /// @notice Emitted when an active auction is voluntarily cancelled (no such path exists yet,
+    ///         reserved for future seller-cancel functionality).
     event AuctionCancelled(address indexed nftContract, uint256 indexed tokenId);
+
+    /// @notice Emitted when an active auction is force-cancelled by the owner.
+    event ForcedAuctionCancelled(address indexed nftContract, uint256 indexed tokenId);
 
     /// @notice Emitted when a new mid-tier platform fee is proposed (subject to 48-hour timelock).
     event PlatformFeeProposed(uint256 newFee, uint256 executeAfter);
@@ -162,8 +206,29 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     /// @notice Emitted when a proposed platform fee is applied after the timelock.
     event PlatformFeeUpdated(uint256 newFee);
 
-    /// @notice Emitted when accumulated fees are withdrawn by the owner.
+    /// @notice Emitted when a new low-tier fee rate is proposed.
+    event FeeRateLowProposed(uint256 newFee, uint256 executeAfter);
+
+    /// @notice Emitted when the proposed low-tier fee rate is applied after the timelock.
+    event FeeRateLowUpdated(uint256 newFee);
+
+    /// @notice Emitted when a new high-tier fee rate is proposed.
+    event FeeRateHighProposed(uint256 newFee, uint256 executeAfter);
+
+    /// @notice Emitted when the proposed high-tier fee rate is applied after the timelock.
+    event FeeRateHighUpdated(uint256 newFee);
+
+    /// @notice Emitted when the minimum bid increment is updated.
+    event MinBidIncrementUpdated(uint256 newBps);
+
+    /// @notice Emitted when treasury fees are withdrawn by the owner.
     event FeesWithdrawn(uint256 amount);
+
+    /// @notice Emitted when rewards pool fees are withdrawn by the owner.
+    event RewardsWithdrawn(uint256 amount);
+
+    /// @notice Emitted when ops fund fees are withdrawn by the owner.
+    event OpsFundWithdrawn(uint256 amount);
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
@@ -174,6 +239,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     /**
      * @notice Lists an NFT for fixed-price sale on the marketplace.
      * @dev The marketplace must be approved to transfer the token before calling this function.
+     *      A token that has an active auction cannot be simultaneously listed.
      *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the token to list.
@@ -193,6 +259,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
             "Marketplace: marketplace not approved"
         );
         require(!_listings[nftContract][tokenId].active, "Marketplace: already listed");
+        require(!_auctions[nftContract][tokenId].active, "Marketplace: token already in auction");
 
         _listings[nftContract][tokenId] = Listing({
             seller: msg.sender,
@@ -218,10 +285,11 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         require(listing.active, "Marketplace: not listed");
         require(msg.value >= listing.price, "Marketplace: insufficient payment");
 
-        listing.active = false;
-
         uint256 price = listing.price;
         address seller = listing.seller;
+
+        // Effects: deactivate and clear storage (gas refund)
+        delete _listings[nftContract][tokenId];
 
         // Distribute proceeds
         _distributePayment(nftContract, tokenId, seller, price);
@@ -241,7 +309,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @notice Cancels an active fixed-price listing.
-     * @dev Only the original seller may cancel.
+     * @dev Only the original seller may cancel. Clears storage to refund gas.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the listed token.
      */
@@ -250,7 +318,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         require(listing.active, "Marketplace: not listed");
         require(listing.seller == msg.sender, "Marketplace: not the seller");
 
-        listing.active = false;
+        delete _listings[nftContract][tokenId];
 
         emit ListingCancelled(nftContract, tokenId);
     }
@@ -258,16 +326,16 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     /**
      * @notice Force-removes an active listing regardless of who created it.
      * @dev Owner-only emergency function for DMCA compliance or abuse prevention.
+     *      Emits ForcedDelisted (distinct from voluntary ListingCancelled).
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the listed token.
      */
     function delistItem(address nftContract, uint256 tokenId) external onlyOwner {
-        Listing storage listing = _listings[nftContract][tokenId];
-        require(listing.active, "Marketplace: not listed");
+        require(_listings[nftContract][tokenId].active, "Marketplace: not listed");
 
-        listing.active = false;
+        delete _listings[nftContract][tokenId];
 
-        emit ListingCancelled(nftContract, tokenId);
+        emit ForcedDelisted(nftContract, tokenId);
     }
 
     // ─── Auction ──────────────────────────────────────────────────────────────
@@ -276,6 +344,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
      * @notice Creates a timed auction for an NFT.
      * @dev The marketplace must be approved before calling. Duration is in seconds.
      *      Duration must not exceed MAX_AUCTION_DURATION (30 days).
+     *      A token that has an active fixed-price listing cannot be simultaneously auctioned.
      *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the token to auction.
@@ -299,6 +368,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
             "Marketplace: marketplace not approved"
         );
         require(!_auctions[nftContract][tokenId].active, "Marketplace: auction already active");
+        require(!_listings[nftContract][tokenId].active, "Marketplace: token already listed");
 
         uint256 endTime = block.timestamp + duration;
 
@@ -318,8 +388,11 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @notice Places a bid on an active auction.
-     * @dev Bid must exceed both the start price and the current highest bid.
-     *      The previous highest bidder is immediately refunded.
+     * @dev Bid must meet the start price and exceed the current highest bid by at least
+     *      minBidIncrementBps (default 1%). The previous highest bidder's funds are stored
+     *      in pendingReturns (pull pattern) — they must call withdrawBid() to retrieve their ETH.
+     *      This prevents a malicious bidder contract from permanently blocking the auction by
+     *      rejecting ETH refunds.
      *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the auctioned token.
@@ -329,16 +402,20 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         require(auction.active, "Marketplace: no active auction");
         require(block.timestamp < auction.endTime, "Marketplace: auction ended");
         require(msg.value >= auction.startPrice, "Marketplace: bid below start price");
-        require(msg.value > auction.highestBid, "Marketplace: bid too low");
 
-        // Refund previous highest bidder
+        // Enforce minimum increment above the current highest bid
+        if (auction.highestBid > 0) {
+            uint256 minNextBid = auction.highestBid +
+                (auction.highestBid * minBidIncrementBps) / FEE_DENOMINATOR;
+            require(msg.value >= minNextBid, "Marketplace: bid increment too low");
+        } else {
+            require(msg.value > auction.highestBid, "Marketplace: bid too low");
+        }
+
+        // Store previous highest bid for pull-payment retrieval
         if (auction.highestBidder != address(0)) {
-            uint256 prevBid = auction.highestBid;
-            address prevBidder = auction.highestBidder;
-            auction.highestBid = 0;
-            auction.highestBidder = address(0);
-            (bool refundSuccess, ) = payable(prevBidder).call{value: prevBid}("");
-            require(refundSuccess, "Marketplace: refund to prev bidder failed");
+            pendingReturns[auction.highestBidder] += auction.highestBid;
+            emit BidReturnPending(auction.highestBidder, auction.highestBid);
         }
 
         auction.highestBid = msg.value;
@@ -348,23 +425,39 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
+     * @notice Withdraws any pending bid return stored for the caller.
+     * @dev Pull-payment pattern for outbid / cancelled-auction refunds.
+     *      Resets the pending amount before transfer (CEI).
+     */
+    function withdrawBid() external nonReentrant {
+        uint256 amount = pendingReturns[msg.sender];
+        require(amount > 0, "Marketplace: no pending returns");
+        pendingReturns[msg.sender] = 0;
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        require(success, "Marketplace: bid withdrawal failed");
+    }
+
+    /**
      * @notice Finalises an auction after its end time has passed.
      * @dev Anyone may call this. If there were no bids the NFT stays with the seller.
      *      If there was a winning bid, royalties and platform fees are distributed and
      *      the NFT is transferred to the highest bidder.
+     *      Clears auction storage to refund gas.
+     *      Reverts when the contract is paused.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the auctioned token.
      */
-    function endAuction(address nftContract, uint256 tokenId) external nonReentrant {
+    function endAuction(address nftContract, uint256 tokenId) external nonReentrant whenNotPaused {
         Auction storage auction = _auctions[nftContract][tokenId];
         require(auction.active, "Marketplace: no active auction");
         require(block.timestamp >= auction.endTime, "Marketplace: auction not yet ended");
 
-        auction.active = false;
-
         address winner = auction.highestBidder;
         uint256 finalPrice = auction.highestBid;
         address seller = auction.seller;
+
+        // Effects: clear storage before external calls (gas refund)
+        delete _auctions[nftContract][tokenId];
 
         if (winner == address(0)) {
             // No bids – auction concluded without a sale
@@ -382,9 +475,12 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Force-cancels an active auction and refunds the highest bidder.
+     * @notice Force-cancels an active auction and stores the highest bid for pull withdrawal.
      * @dev Owner-only emergency function for DMCA compliance or abuse prevention.
-     *      If there is a current highest bid, the bidder is refunded before cancellation.
+     *      If there is a current highest bid, the bidder's ETH is added to pendingReturns
+     *      (pull pattern) — the bidder must call withdrawBid() to retrieve it.
+     *      Emits ForcedAuctionCancelled (distinct from voluntary AuctionCancelled).
+     *      Clears auction storage to refund gas.
      * @param nftContract Address of the ERC721 token contract.
      * @param tokenId     ID of the auctioned token.
      */
@@ -392,19 +488,15 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         Auction storage auction = _auctions[nftContract][tokenId];
         require(auction.active, "Marketplace: no active auction");
 
-        auction.active = false;
-
-        // Refund current highest bidder if any
+        // Store highest bid for pull-payment retrieval
         if (auction.highestBidder != address(0)) {
-            uint256 bidToRefund = auction.highestBid;
-            address bidderToRefund = auction.highestBidder;
-            auction.highestBid = 0;
-            auction.highestBidder = address(0);
-            (bool refundSuccess, ) = payable(bidderToRefund).call{value: bidToRefund}("");
-            require(refundSuccess, "Marketplace: bidder refund failed");
+            pendingReturns[auction.highestBidder] += auction.highestBid;
+            emit BidReturnPending(auction.highestBidder, auction.highestBid);
         }
 
-        emit AuctionCancelled(nftContract, tokenId);
+        delete _auctions[nftContract][tokenId];
+
+        emit ForcedAuctionCancelled(nftContract, tokenId);
     }
 
     // ─── Owner Functions ──────────────────────────────────────────────────────
@@ -422,7 +514,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Applies the previously proposed fee after the 48-hour timelock has elapsed.
+     * @notice Applies the previously proposed mid-tier fee after the 48-hour timelock has elapsed.
      * @dev Reverts if no fee change is pending or the timelock has not yet expired.
      */
     function executePlatformFee() external onlyOwner {
@@ -433,6 +525,64 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         pendingPlatformFee = 0;
         platformFeeChangeTime = 0;
         emit PlatformFeeUpdated(newFee);
+    }
+
+    /**
+     * @notice Proposes a new small-sale fee rate, subject to a 48-hour timelock.
+     * @param newFee New low-tier fee in basis points (max 500 = 5%).
+     */
+    function proposeFeeRateLow(uint256 newFee) external onlyOwner {
+        require(newFee <= 500, "Marketplace: low fee cannot exceed 5%");
+        pendingFeeRateLow = newFee;
+        feeRateLowChangeTime = block.timestamp + FEE_TIMELOCK_DELAY;
+        emit FeeRateLowProposed(newFee, feeRateLowChangeTime);
+    }
+
+    /**
+     * @notice Applies the proposed small-sale fee after the 48-hour timelock has elapsed.
+     */
+    function executeFeeRateLow() external onlyOwner {
+        require(feeRateLowChangeTime != 0, "Marketplace: no pending low fee change");
+        require(block.timestamp >= feeRateLowChangeTime, "Marketplace: timelock not expired");
+        uint256 newFee = pendingFeeRateLow;
+        feeRateLow = newFee;
+        pendingFeeRateLow = 0;
+        feeRateLowChangeTime = 0;
+        emit FeeRateLowUpdated(newFee);
+    }
+
+    /**
+     * @notice Proposes a new large-sale fee rate, subject to a 48-hour timelock.
+     * @param newFee New high-tier fee in basis points (max 500 = 5%).
+     */
+    function proposeFeeRateHigh(uint256 newFee) external onlyOwner {
+        require(newFee <= 500, "Marketplace: high fee cannot exceed 5%");
+        pendingFeeRateHigh = newFee;
+        feeRateHighChangeTime = block.timestamp + FEE_TIMELOCK_DELAY;
+        emit FeeRateHighProposed(newFee, feeRateHighChangeTime);
+    }
+
+    /**
+     * @notice Applies the proposed large-sale fee after the 48-hour timelock has elapsed.
+     */
+    function executeFeeRateHigh() external onlyOwner {
+        require(feeRateHighChangeTime != 0, "Marketplace: no pending high fee change");
+        require(block.timestamp >= feeRateHighChangeTime, "Marketplace: timelock not expired");
+        uint256 newFee = pendingFeeRateHigh;
+        feeRateHigh = newFee;
+        pendingFeeRateHigh = 0;
+        feeRateHighChangeTime = 0;
+        emit FeeRateHighUpdated(newFee);
+    }
+
+    /**
+     * @notice Updates the minimum bid increment (in basis points).
+     * @param bps New increment in basis points (0–1000, i.e. 0–10%).
+     */
+    function setMinBidIncrement(uint256 bps) external onlyOwner {
+        require(bps <= 1000, "Marketplace: increment cannot exceed 10%");
+        minBidIncrementBps = bps;
+        emit MinBidIncrementUpdated(bps);
     }
 
     /**
@@ -447,7 +597,7 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Pauses all listing, buying, and bidding operations.
+     * @notice Pauses all listing, buying, bidding, and auction-ending operations.
      * @dev Callable only by the owner. Use in emergency situations.
      */
     function pause() external onlyOwner {
@@ -463,18 +613,43 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Withdraws all accumulated platform fees to the owner.
-     * @dev Resets treasury, rewards pool, and ops fund balances.
+     * @notice Withdraws the treasury portion (60%) of accumulated platform fees to the owner.
+     * @dev Use withdrawRewardsPool() and withdrawOpsFund() to withdraw the other sub-balances.
      */
     function withdrawFees() external onlyOwner nonReentrant {
-        uint256 amount = accumulatedFees;
+        uint256 amount = treasuryBalance;
         require(amount > 0, "Marketplace: no fees to withdraw");
-        accumulatedFees = 0;
-        rewardsPoolBalance = 0;
-        opsFundBalance = 0;
+        accumulatedFees -= amount;
+        treasuryBalance = 0;
         (bool success, ) = payable(owner()).call{value: amount}("");
         require(success, "Marketplace: withdrawal failed");
         emit FeesWithdrawn(amount);
+    }
+
+    /**
+     * @notice Withdraws the creator rewards pool (30%) of accumulated platform fees to the owner.
+     */
+    function withdrawRewardsPool() external onlyOwner nonReentrant {
+        uint256 amount = rewardsPoolBalance;
+        require(amount > 0, "Marketplace: no rewards to withdraw");
+        accumulatedFees -= amount;
+        rewardsPoolBalance = 0;
+        (bool success, ) = payable(owner()).call{value: amount}("");
+        require(success, "Marketplace: withdrawal failed");
+        emit RewardsWithdrawn(amount);
+    }
+
+    /**
+     * @notice Withdraws the operations fund (10%) of accumulated platform fees to the owner.
+     */
+    function withdrawOpsFund() external onlyOwner nonReentrant {
+        uint256 amount = opsFundBalance;
+        require(amount > 0, "Marketplace: no ops balance to withdraw");
+        accumulatedFees -= amount;
+        opsFundBalance = 0;
+        (bool success, ) = payable(owner()).call{value: amount}("");
+        require(success, "Marketplace: withdrawal failed");
+        emit OpsFundWithdrawn(amount);
     }
 
     // ─── View Functions ───────────────────────────────────────────────────────
@@ -509,10 +684,13 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @dev Distributes a sale payment: deducts royalties (ERC2981) and a tiered platform fee,
-     *      sends the remainder to the seller, and accumulates the platform fee.
+     *      sends the remainder to the seller, and accumulates the platform fee into three real
+     *      sub-balances: treasury (60%), rewards pool (30%), ops fund (10%).
      *      Sellers who have been granted a first-sale-free benefit pay zero platform fee
      *      on this transaction; the benefit is consumed immediately.
-     *      The platform fee is split into treasury (60%), rewards pool (30%), ops fund (10%).
+     *      If the ERC2981 royalty query returns an amount that would exceed the safe margin
+     *      (royaltyAmount + fee > salePrice), the royalty is silently skipped to prevent a
+     *      malicious NFT contract from blocking sales.
      * @param nftContract Address of the ERC721 token contract (may implement ERC2981).
      * @param tokenId     Token ID being sold.
      * @param seller      Address of the seller.
@@ -527,33 +705,41 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         uint256 royaltyAmount = 0;
         address royaltyReceiver = address(0);
 
-        // Check ERC2981 royalty
-        try IERC2981(nftContract).royaltyInfo(tokenId, salePrice) returns (
-            address receiver,
-            uint256 amount
-        ) {
-            if (receiver != address(0) && amount > 0 && receiver != seller) {
-                royaltyReceiver = receiver;
-                royaltyAmount = amount;
-            }
-        } catch {}
-
-        // Determine effective platform fee rate (tiered + first-sale-free)
+        // Determine effective platform fee first so we can validate royalty bounds
         uint256 fee = 0;
         if (firstSaleFreeGranted[seller]) {
-            // Consume the first-sale-free benefit
             firstSaleFreeGranted[seller] = false;
         } else {
             fee = _getEffectiveFee(salePrice);
         }
 
+        // Check ERC2981 royalty; skip if it would cause underflow
+        try IERC2981(nftContract).royaltyInfo(tokenId, salePrice) returns (
+            address receiver,
+            uint256 amount
+        ) {
+            if (
+                receiver != address(0) &&
+                amount > 0 &&
+                receiver != seller &&
+                amount + fee <= salePrice  // bounds check: skip royalty if it would exceed sale proceeds
+            ) {
+                royaltyReceiver = receiver;
+                royaltyAmount = amount;
+            }
+        } catch {}
+
         uint256 sellerProceeds = salePrice - fee - royaltyAmount;
 
-        // Update fee-split accounting
+        // Update fee-split accounting into real sub-balances
         if (fee > 0) {
+            uint256 rewards = (fee * 30) / 100;
+            uint256 ops = (fee * 10) / 100;
+            uint256 treasury = fee - rewards - ops;
             accumulatedFees += fee;
-            rewardsPoolBalance += (fee * 30) / 100;
-            opsFundBalance += (fee * 10) / 100;
+            rewardsPoolBalance += rewards;
+            opsFundBalance += ops;
+            treasuryBalance += treasury;
         }
 
         if (royaltyAmount > 0 && royaltyReceiver != address(0)) {
@@ -585,4 +771,3 @@ contract NFTMarketplace is Ownable, Pausable, ReentrancyGuard {
         return (salePrice * rate) / FEE_DENOMINATOR;
     }
 }
-
